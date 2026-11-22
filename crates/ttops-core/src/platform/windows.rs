@@ -9,10 +9,10 @@ pub struct Windows {
 }
 
 impl Windows {
-    pub fn new() -> Self {
-        Self {
-            home: dirs::home_dir().unwrap_or_else(|| PathBuf::from(r"C:\Users\Default")),
-        }
+    pub fn new() -> Option<Self> {
+        Some(Self {
+            home: dirs::home_dir()?,
+        })
     }
 
     fn env_path(&self, name: &str, fallback: &str) -> PathBuf {

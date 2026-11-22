@@ -8,10 +8,10 @@ pub struct MacOs {
 }
 
 impl MacOs {
-    pub fn new() -> Self {
-        Self {
-            home: dirs::home_dir().unwrap_or_else(|| PathBuf::from("/var/empty")),
-        }
+    pub fn new() -> Option<Self> {
+        Some(Self {
+            home: dirs::home_dir()?,
+        })
     }
 }
 

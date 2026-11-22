@@ -40,19 +40,20 @@ pub trait Platform: Send + Sync {
     fn volume_summary(&self) -> Option<VolumeSummary>;
 }
 
-/// Platform for the OS this binary was built for.
-pub fn native() -> Box<dyn Platform> {
+/// Platform for the OS this binary was built for. `None` means the home
+/// directory could not be resolved at runtime.
+pub fn native() -> Option<Box<dyn Platform>> {
     #[cfg(target_os = "macos")]
     {
-        Box::new(macos::MacOs::new())
+        Some(Box::new(macos::MacOs::new()?))
     }
     #[cfg(target_os = "windows")]
     {
-        Box::new(windows::Windows::new())
+        Some(Box::new(windows::Windows::new()?))
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        compile_error!("TTops supports macOS and Windows only")
+        None
     }
 }
 
