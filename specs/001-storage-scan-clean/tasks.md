@@ -44,15 +44,15 @@ Scoping is complete. Implementation was started and then handed off; continue fr
 
 ## Phase 2: Foundational (blocks all stories)
 
-- [ ] T007 Define model types in `crates/ttops-core/src/model.rs` per data-model.md (Category, RuleKind, Rule, ScanItem, Target, ScanSession, CleanupPreview, CleanupRun, ItemResult, SkipReason, Settings; camelCase serde)
-- [ ] T008 Define `Platform` trait in `crates/ttops-core/src/platform/mod.rs` (home, cache/data/local_data dirs, trash dir, protected roots, rule catalog source, `move_to_trash`, `is_process_running`) plus `TestPlatform` rooted in a temp dir
-- [ ] T009 [P] Implement `crates/ttops-core/src/platform/macos.rs` and `crates/ttops-core/src/platform/windows.rs` (cfg-gated) with protected roots from research.md R6
-- [ ] T010 Write failing tests `crates/ttops-core/tests/guard.rs`: protected roots, inside-root paths, symlink into protected root, home itself, volume root, `.app` bundle, name patterns `*.keychain*`, `id_rsa*`, `id_ed25519*`, `*.pem`, `credentials`, `.env`
-- [ ] T011 Implement `crates/ttops-core/src/guard.rs` (canonicalise, prefix + pattern checks) until T010 passes
-- [ ] T012 [P] Write failing tests `crates/ttops-core/tests/fsutil.rs`: dir size without following symlinks, last-modified, missing path
-- [ ] T013 Implement `crates/ttops-core/src/fsutil.rs` until T012 passes
-- [ ] T014 Write failing tests `crates/ttops-core/tests/rules.rs`: token expansion, catalog validation ("`preselect` requires `regenerable`", "must be false for category B and C", "`guidance` required when `reviewOnly`", unique ids), both embedded catalogs load
-- [ ] T015 Implement `crates/ttops-core/src/rules.rs` and catalogs `crates/ttops-core/rules/macos.toml`, `crates/ttops-core/rules/windows.toml` until T014 passes
+- [X] T007 Define model types in `crates/ttops-core/src/model.rs` per data-model.md (Category, RuleKind, Rule, ScanItem, Target, ScanSession, CleanupPreview, CleanupRun, ItemResult, SkipReason, Settings; camelCase serde)
+- [X] T008 Define `Platform` trait in `crates/ttops-core/src/platform/mod.rs` (home, cache/data/local_data dirs, trash dir, protected roots, rule catalog source, `move_to_trash`, `is_process_running`) plus `TestPlatform` rooted in a temp dir
+- [X] T009 [P] Implement `crates/ttops-core/src/platform/macos.rs` and `crates/ttops-core/src/platform/windows.rs` (cfg-gated) with protected roots from research.md R6
+- [X] T010 Write failing tests `crates/ttops-core/tests/guard.rs`: protected roots, inside-root paths, symlink into protected root, home itself, volume root, `.app` bundle, name patterns `*.keychain*`, `id_rsa*`, `id_ed25519*`, `*.pem`, `credentials`, `.env`
+- [X] T011 Implement `crates/ttops-core/src/guard.rs` (canonicalise, prefix + pattern checks) until T010 passes
+- [X] T012 [P] Write failing tests `crates/ttops-core/tests/fsutil.rs`: dir size without following symlinks, last-modified, missing path
+- [X] T013 Implement `crates/ttops-core/src/fsutil.rs` until T012 passes
+- [X] T014 Write failing tests `crates/ttops-core/tests/rules.rs`: token expansion, catalog validation ("`preselect` requires `regenerable`", "must be false for category B and C", "`guidance` required when `reviewOnly`", unique ids), both embedded catalogs load
+- [X] T015 Implement `crates/ttops-core/src/rules.rs` and catalogs `crates/ttops-core/rules/macos.toml`, `crates/ttops-core/rules/windows.toml` until T014 passes
 - [ ] T016 [P] Write failing tests `crates/ttops-core/tests/audit.rs`: append/read runs, newest first, run without `runFinished` reads as `interrupted`
 - [ ] T017 Implement `crates/ttops-core/src/audit.rs` (JSONL, append + flush per record) until T016 passes
 - [ ] T018 [P] Implement `crates/ttops-core/src/settings.rs` (load/save JSON, default threshold 1 GiB) with tests in same file
