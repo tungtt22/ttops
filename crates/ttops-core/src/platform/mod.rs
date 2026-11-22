@@ -30,7 +30,10 @@ pub trait Platform: Send + Sync {
         None
     }
     fn empty_recycle_bin(&self) -> io::Result<()> {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "no recycle bin API"))
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "no recycle bin API",
+        ))
     }
     /// Lower-cased names of running processes.
     fn running_processes(&self) -> Vec<String>;
@@ -55,7 +58,9 @@ pub fn native() -> Box<dyn Platform> {
 
 pub(crate) fn running_processes_sysinfo() -> Vec<String> {
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
-    let mut sys = System::new();
+    let Ok(mut sys) = System::new() else {
+        return Vec::new();
+    };
     sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
     sys.processes()
         .values()
@@ -66,11 +71,12 @@ pub(crate) fn running_processes_sysinfo() -> Vec<String> {
 /// Volume holding `home`: the disk with the longest mount point prefix, preferring
 /// `preferred` when present (APFS data volume on macOS).
 pub(crate) fn volume_for(home: &Path, preferred: Option<&Path>) -> Option<VolumeSummary> {
-    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let disks = sysinfo::Disks::new_with_refreshed_list().ok()?;
+    let disk_list: &[sysinfo::Disk] = &disks;
     let pick = preferred
-        .and_then(|p| disks.iter().find(|d| d.mount_point() == p))
+        .and_then(|p| disk_list.iter().find(|d| d.mount_point() == p))
         .or_else(|| {
-            disks
+            disk_list
                 .iter()
                 .filter(|d| home.starts_with(d.mount_point()))
                 .max_by_key(|d| d.mount_point().as_os_str().len())
@@ -142,7 +148,9 @@ impl Platform for TestPlatform {
             let mut dest = self.trash_dir().join(name);
             let mut n = 1;
             while dest.exists() {
-                dest = self.trash_dir().join(format!("{}-{n}", name.to_string_lossy()));
+                dest = self
+                    .trash_dir()
+                    .join(format!("{}-{n}", name.to_string_lossy()));
                 n += 1;
             }
             std::fs::rename(p, &dest).map_err(|e| trash::Error::Unknown {

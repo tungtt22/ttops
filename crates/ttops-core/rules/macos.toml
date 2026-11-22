@@ -1,0 +1,18 @@
+[[rules]]
+id = "npm-cache"
+name = "npm cache"
+category = "A"
+kind = "children"
+paths = ["{cache}/npm"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "trash"
+name = "Trash"
+category = "A"
+kind = "trash"
+paths = ["~/.Trash"]
+regenerable = true
+preselect = false
+permanentOnly = true

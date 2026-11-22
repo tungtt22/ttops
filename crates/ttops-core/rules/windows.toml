@@ -1,0 +1,17 @@
+[[rules]]
+id = "npm-cache"
+name = "npm cache"
+category = "A"
+kind = "children"
+paths = ["{cache}/npm"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "recycle-bin"
+name = "Recycle Bin"
+category = "A"
+kind = "trash"
+regenerable = true
+preselect = false
+permanentOnly = true
