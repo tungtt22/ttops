@@ -1,10 +1,11 @@
 <!--
 Sync Impact Report
-- Version change: (template) → 1.0.0
-- Modified principles: placeholders → I. Safety-First Cleanup, II. Cross-Platform Parity,
-  III. Modular Feature Architecture, IV. Test-First Core (NON-NEGOTIABLE),
-  V. Lightweight and Private
-- Added sections: Technology and Platform Constraints, Development Workflow and Quality Gates
+- Version change: 1.0.0 → 1.1.0 (MINOR: materially expanded guidance)
+- Modified principles: V. Lightweight and Private → V. Lightweight, Private, and Public-Safe
+  (no hard-coded personal or secret values; runtime-resolved locations)
+- Modified sections: Technology and Platform Constraints (macOS-first release sequencing),
+  Development Workflow and Quality Gates (hard-code gate added to pre-PR checks)
+- Added sections: none
 - Removed sections: none
 - Deferred TODOs: none
 -->
@@ -60,19 +61,24 @@ confirmation, and preserving locally built artefacts prevent irreversible loss.
 - A change to the deletion engine or protected-path guard MUST include a regression test that
   proves a protected path is refused.
 
-### V. Lightweight and Private
+### V. Lightweight, Private, and Public-Safe
 
 - TTops MUST NOT send telemetry or analytics. The only permitted network call is an update check
   explicitly triggered or enabled by the user.
 - Release binaries SHOULD stay under 20 MB per platform; a new dependency that adds more than
   2 MB to a release build MUST be justified in its plan.
 - Monitoring data MUST stay on the local machine.
+- The repository is public. Code, tests, fixtures, and docs MUST NOT contain personal absolute
+  paths, usernames, emails, hostnames, tokens, or keys. Every user or system location MUST be
+  resolved at runtime through the Platform layer; when it cannot be resolved, the code returns an
+  error or skips the location instead of falling back to a literal path.
 
 ## Technology and Platform Constraints
 
 - Shell: Tauri 2. Core: Rust (stable toolchain). UI: TypeScript with Vite; no heavyweight UI
   framework unless a plan justifies it.
-- Targets: macOS 13+ (Apple Silicon and Intel), Windows 10/11 x64.
+- Targets: macOS 13+ (Apple Silicon and Intel), Windows 10/11 x64. Releases may ship macOS
+  first (v0.1.0 is macOS-only); a release notes any platform gap per Principle II.
 - Release artefacts: `.app`/`.dmg` for macOS, `.msi` for Windows.
 - Versioning: SemVer for the application; breaking changes to the audit log format or rule
   catalog schema require a MINOR bump with a migration note before 1.0, MAJOR after 1.0.
@@ -87,7 +93,7 @@ confirmation, and preserving locally built artefacts prevent irreversible loss.
   criteria, and verification in the pull request.
 - Changes reach `main` only through a pull request merged by the owner. No direct or force push
   to `main`; no `--no-verify`.
-- Before a pull request is opened: `cargo fmt --check`, `cargo clippy -- -D warnings`,
+- Before a pull request is opened: `scripts/check-hardcode.sh`, `cargo fmt --check`, `cargo clippy -- -D warnings`,
   `cargo test`, and the UI type check MUST pass.
 - Review follows the owner's separation of duties: Tech Lead exact-head review and Tester
   verification run as independent sessions tracked on the Kanban board, and verdicts are posted
@@ -103,4 +109,4 @@ confirmation, and preserving locally built artefacts prevent irreversible loss.
   and records the change in the Sync Impact Report.
 - Reviewers MUST verify Principle I and IV compliance on every change touching cleanup code.
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-22 | **Last Amended**: 2026-11-22
+**Version**: 1.1.0 | **Ratified**: 2026-11-22 | **Last Amended**: 2026-11-22

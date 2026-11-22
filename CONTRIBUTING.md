@@ -8,6 +8,10 @@
    must state root cause, acceptance criteria, and verification.
 3. Core logic is test-first; tests use temp dirs only and never touch real user data.
 4. Run `./scripts/check.sh` before opening a pull request.
+   The repository is public. Never commit personal absolute paths, usernames, emails, hostnames,
+   tokens, or keys — in code, tests, fixtures, or docs. Resolve locations at runtime through the
+   Platform layer; use `example.com` for placeholder emails. `scripts/check-hardcode.sh` enforces
+   this and runs first in `check.sh`.
 5. Work on a feature branch; changes reach `main` only via a PR merged by the owner.
    No direct or force push to `main`, no `--no-verify`.
 6. Tech Lead review and Tester verification run as independent sessions tracked on the Kanban
