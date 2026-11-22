@@ -94,3 +94,44 @@ fn honours_a_preexisting_cancellation_request() {
     assert_eq!(session.status, ScanStatus::Cancelled);
     assert!(session.items.is_empty());
 }
+
+struct CancelAfterFirstProgress<'a>(&'a AtomicBool);
+impl ttops_core::scanner::ProgressSink for CancelAfterFirstProgress<'_> {
+    fn progress(&self, _: &str, _: usize, _: u64) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+#[test]
+fn cancellation_after_progress_retains_partial_read_only_results() {
+    let temp = tempfile::tempdir().unwrap();
+    let platform = TestPlatform::new(temp.path(), "");
+    let cache = platform.cache_dir();
+    std::fs::write(cache.join("first"), b"first").unwrap();
+    std::fs::write(cache.join("second"), b"second").unwrap();
+    let first_before = std::fs::read(cache.join("first")).unwrap();
+    let second_before = std::fs::read(cache.join("second")).unwrap();
+    let cancel = AtomicBool::new(false);
+    let session = scan(
+        &platform,
+        &[
+            path_rule(
+                RuleKind::Dir,
+                cache.join("first").to_string_lossy().into_owned(),
+            ),
+            path_rule(
+                RuleKind::Dir,
+                cache.join("second").to_string_lossy().into_owned(),
+            ),
+        ],
+        &NoContainers,
+        &cancel,
+        &CancelAfterFirstProgress(&cancel),
+    );
+
+    assert_eq!(session.status, ScanStatus::Cancelled);
+    assert_eq!(session.items.len(), 1);
+    assert_eq!(session.items[0].size_bytes, 5);
+    assert_eq!(std::fs::read(cache.join("first")).unwrap(), first_before);
+    assert_eq!(std::fs::read(cache.join("second")).unwrap(), second_before);
+}

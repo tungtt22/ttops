@@ -1,14 +1,48 @@
+import { listen } from "@tauri-apps/api/event";
 import { api, bytes, type Scan, type ScanItem } from "../../api";
 import { confirmCleanup } from "./clean";
 
+interface ScanFinished { scanId: string; status: Scan["status"]; }
+
 export async function storageView(root: HTMLElement): Promise<void> {
-  root.innerHTML = `<section><h1>Storage</h1><p id="volume">Loading volume…</p><button class="primary" id="scan">Scan</button><button id="clean" disabled>Clean selected</button><p id="status"></p><div id="results"></div></section>`;
+  root.innerHTML = `<section><h1>Storage</h1><p id="volume">Loading volume…</p><button class="primary" id="scan">Scan</button><button id="cancel" hidden disabled>Cancel</button><button id="clean" disabled>Clean selected</button><p id="status"></p><div id="results"></div></section>`;
   try { const volume = await api.volume(); root.querySelector("#volume")!.textContent = `${bytes(volume.usedBytes)} used of ${bytes(volume.totalBytes)} · ${bytes(volume.freeBytes)} free`; } catch { root.querySelector("#volume")!.textContent = "Volume summary unavailable"; }
-  root.querySelector<HTMLButtonElement>("#scan")!.onclick = async () => {
-    const button = root.querySelector<HTMLButtonElement>("#scan")!;
-    button.disabled = true;
+
+  const scanButton = root.querySelector<HTMLButtonElement>("#scan")!;
+  const cancelButton = root.querySelector<HTMLButtonElement>("#cancel")!;
+  let activeScanId: string | undefined;
+  let earlyFinishedScanId: string | undefined;
+  const finishScan = async (scanId: string) => {
+    activeScanId = undefined;
+    cancelButton.hidden = true;
+    cancelButton.disabled = true;
+    scanButton.disabled = false;
+    try { render(root, await api.getScan(scanId)); } catch (error) { root.querySelector("#status")!.textContent = String(error); }
+  };
+  await listen<ScanFinished>("scan://finished", ({ payload }) => {
+    if (payload.scanId === activeScanId) void finishScan(payload.scanId);
+    else earlyFinishedScanId = payload.scanId;
+  });
+
+  scanButton.onclick = async () => {
+    scanButton.disabled = true;
     root.querySelector("#status")!.textContent = "Scanning read-only locations…";
-    try { render(root, await api.scan()); } catch (error) { root.querySelector("#status")!.textContent = String(error); } finally { button.disabled = false; }
+    try {
+      const started = await api.startScan();
+      activeScanId = started.scanId;
+      cancelButton.hidden = false;
+      cancelButton.disabled = false;
+      if (earlyFinishedScanId === activeScanId) void finishScan(activeScanId);
+    } catch (error) {
+      root.querySelector("#status")!.textContent = String(error);
+      scanButton.disabled = false;
+    }
+  };
+  cancelButton.onclick = async () => {
+    if (!activeScanId) return;
+    cancelButton.disabled = true;
+    root.querySelector("#status")!.textContent = "Cancelling scan…";
+    try { await api.cancelScan(activeScanId); } catch (error) { root.querySelector("#status")!.textContent = String(error); cancelButton.disabled = false; }
   };
 }
 function render(root: HTMLElement, scan: Scan): void {

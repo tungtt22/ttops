@@ -1,16 +1,55 @@
-use std::sync::atomic::AtomicBool;
+use std::{
+    sync::Mutex,
+    thread,
+    time::{Duration, Instant},
+};
 
+use serde::Serialize;
 use tauri::{Emitter, State};
 use ttops_core::{
     model::{CleanupPreview, CleanupRun, ScanSession, VolumeSummary},
     rules::load_platform_catalog,
-    scanner::{NoopProgress, scan},
+    scanner::{ProgressSink, scan_with_id},
 };
 
 use crate::state::AppState;
 
 fn error(message: impl ToString) -> String {
     message.to_string()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanStarted {
+    scan_id: String,
+}
+
+struct TauriProgress {
+    app: tauri::AppHandle,
+    scan_id: String,
+    last_sent: Mutex<Option<Instant>>,
+}
+
+impl ProgressSink for TauriProgress {
+    fn progress(&self, current_rule: &str, items_found: usize, bytes_found: u64) {
+        let mut last_sent = match self.last_sent.lock() {
+            Ok(last_sent) => last_sent,
+            Err(_) => return,
+        };
+        if last_sent.is_some_and(|last| last.elapsed() < Duration::from_millis(100)) {
+            return;
+        }
+        *last_sent = Some(Instant::now());
+        let _ = self.app.emit(
+            "scan://progress",
+            serde_json::json!({
+                "scanId": self.scan_id,
+                "currentRule": current_rule,
+                "itemsFound": items_found,
+                "bytesFound": bytes_found,
+            }),
+        );
+    }
 }
 
 #[tauri::command]
@@ -25,39 +64,48 @@ pub fn get_volume_summary(state: State<'_, AppState>) -> Result<VolumeSummary, S
 pub fn start_scan(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
-) -> Result<ScanSession, String> {
+) -> Result<ScanStarted, String> {
     let rules = load_platform_catalog(state.platform.as_ref()).map_err(error)?;
-    let session = scan(
-        state.platform.as_ref(),
-        &rules,
-        state.container.as_ref(),
-        &AtomicBool::new(false),
-        &NoopProgress,
-    );
-    let id = session.id.clone();
-    let status = session.status;
-    *state.scan.lock().map_err(error)? = Some(session.clone());
-    app.emit(
-        "scan://finished",
-        serde_json::json!({"scanId": id, "status": status}),
-    )
-    .map_err(error)?;
-    Ok(session)
+    let (scan_id, cancel) = state.scans.begin()?;
+    let platform = state.platform.clone();
+    let container = state.container.clone();
+    let scans = state.scans.clone();
+    let app_for_scan = app.clone();
+    let scan_id_for_thread = scan_id.clone();
+
+    thread::spawn(move || {
+        let progress = TauriProgress {
+            app: app_for_scan.clone(),
+            scan_id: scan_id_for_thread.clone(),
+            last_sent: Mutex::new(None),
+        };
+        let session = scan_with_id(
+            scan_id_for_thread.clone(),
+            platform.as_ref(),
+            &rules,
+            container.as_ref(),
+            cancel.as_ref(),
+            &progress,
+        );
+        let status = session.status;
+        let _ = scans.finish(session);
+        let _ = app_for_scan.emit(
+            "scan://finished",
+            serde_json::json!({"scanId": scan_id_for_thread, "status": status}),
+        );
+    });
+
+    Ok(ScanStarted { scan_id })
 }
 
 #[tauri::command]
-pub fn cancel_scan(_scan_id: String) {}
+pub fn cancel_scan(scan_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    state.scans.cancel(&scan_id)
+}
 
 #[tauri::command]
 pub fn get_scan(scan_id: String, state: State<'_, AppState>) -> Result<ScanSession, String> {
-    state
-        .scan
-        .lock()
-        .map_err(error)?
-        .as_ref()
-        .filter(|scan| scan.id == scan_id)
-        .cloned()
-        .ok_or_else(|| error("unknown scan"))
+    state.scans.get(&scan_id)
 }
 
 #[tauri::command]
@@ -67,14 +115,7 @@ pub fn preview_cleanup(
     permanent: bool,
     state: State<'_, AppState>,
 ) -> Result<CleanupPreview, String> {
-    let scan = state
-        .scan
-        .lock()
-        .map_err(error)?
-        .as_ref()
-        .filter(|scan| scan.id == scan_id)
-        .cloned()
-        .ok_or_else(|| error("unknown scan"))?;
+    let scan = state.scans.get(&scan_id)?;
     Ok(state
         .cleaner
         .lock()

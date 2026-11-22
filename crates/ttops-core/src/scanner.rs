@@ -27,12 +27,30 @@ pub fn scan(
     cancel: &AtomicBool,
     progress: &dyn ProgressSink,
 ) -> ScanSession {
-    let mut session = ScanSession {
-        id: format!(
+    scan_with_id(
+        format!(
             "scan-{}-{}",
             now_ms(),
             NEXT_SCAN.fetch_add(1, Ordering::Relaxed)
         ),
+        platform,
+        rules,
+        container,
+        cancel,
+        progress,
+    )
+}
+
+pub fn scan_with_id(
+    id: String,
+    platform: &dyn Platform,
+    rules: &[Rule],
+    container: &dyn ContainerProvider,
+    cancel: &AtomicBool,
+    progress: &dyn ProgressSink,
+) -> ScanSession {
+    let mut session = ScanSession {
+        id,
         started_at: now_ms(),
         finished_at: None,
         status: ScanStatus::Running,
