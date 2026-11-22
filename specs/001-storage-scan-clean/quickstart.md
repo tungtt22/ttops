@@ -42,3 +42,12 @@ Manual checks:
 ```bash
 npm --prefix ui run tauri build     # .app/.dmg on macOS, .msi on Windows
 ```
+
+## macOS validation record (2026-11-22)
+
+- `./scripts/check.sh` passed: hard-code gate, Rust formatting, clippy with warnings denied,
+  workspace tests, and TypeScript typecheck. Core tests use only `tempfile` fixtures.
+- `npm --prefix ui run tauri build` produced `TTops.app` and
+  `TTops_0.1.0_aarch64.dmg` on macOS. The manual GUI checklist above remains for the next
+  interactive validation pass; this automated run did not execute cleanup against machine data
+  or the real Trash.
