@@ -1,0 +1,12 @@
+/target/
+ui/node_modules/
+ui/dist/
+src-tauri/gen/
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*.rs.bk
+.env*
+.idea/
