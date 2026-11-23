@@ -1,9 +1,106 @@
 [[rules]]
+id = "browser-caches"
+name = "Browser caches"
+category = "A"
+kind = "dirContents"
+paths = ["{cache}/Google/Chrome", "{cache}/com.apple.Safari", "{cache}/Mozilla/Firefox"]
+regenerable = true
+preselect = true
+
+[[rules]]
 id = "npm-cache"
 name = "npm cache"
 category = "A"
-kind = "children"
-paths = ["{cache}/npm"]
+kind = "dirContents"
+paths = ["~/.npm"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "pip-cache"
+name = "pip cache"
+category = "A"
+kind = "dirContents"
+paths = ["{cache}/pip"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "uv-cache"
+name = "uv cache"
+category = "A"
+kind = "dirContents"
+paths = ["{cache}/uv"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "homebrew-cache"
+name = "Homebrew cache"
+category = "A"
+kind = "dirContents"
+paths = ["{cache}/Homebrew"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "poetry-cache"
+name = "Poetry cache"
+category = "A"
+kind = "dirContents"
+paths = ["{cache}/pypoetry"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "gradle-cache"
+name = "Gradle cache"
+category = "A"
+kind = "dirContents"
+paths = ["~/.gradle/caches"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "maven-cache"
+name = "Maven cache"
+category = "A"
+kind = "dirContents"
+paths = ["~/.m2/repository"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "cargo-registry"
+name = "Cargo registry"
+category = "A"
+kind = "dirContents"
+paths = ["~/.cargo/registry"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "app-updater-caches"
+name = "App updater caches"
+category = "A"
+kind = "dirContents"
+paths = ["{cache}/com.github.Electron", "{cache}/SquirrelTemp"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "container-build-cache"
+name = "Container build cache"
+category = "A"
+kind = "containerBuildCache"
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "container-unused-images"
+name = "Unused registry container images"
+category = "A"
+kind = "containerImages"
 regenerable = true
 preselect = true
 
