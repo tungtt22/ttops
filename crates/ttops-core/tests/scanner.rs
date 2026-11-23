@@ -1,4 +1,10 @@
-use std::sync::atomic::AtomicBool;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
 use ttops_core::{
     container::{ContainerImage, ContainerProvider},
@@ -134,4 +140,38 @@ fn cancellation_after_progress_retains_partial_read_only_results() {
     assert_eq!(session.items[0].size_bytes, 5);
     assert_eq!(std::fs::read(cache.join("first")).unwrap(), first_before);
     assert_eq!(std::fs::read(cache.join("second")).unwrap(), second_before);
+}
+
+#[test]
+fn cancellation_interrupts_a_large_tree_within_two_seconds() {
+    let temp = tempfile::tempdir().unwrap();
+    let platform = TestPlatform::new(temp.path(), "");
+    let tree = platform.cache_dir().join("large-tree");
+    for directory in 0..160 {
+        let directory = tree.join(format!("directory-{directory}"));
+        std::fs::create_dir_all(&directory).unwrap();
+        for file in 0..160 {
+            std::fs::write(directory.join(format!("file-{file}")), b"x").unwrap();
+        }
+    }
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_for_thread = cancel.clone();
+    let start = Instant::now();
+    let worker = std::thread::spawn(move || {
+        scan(
+            &platform,
+            &[path_rule(
+                RuleKind::Dir,
+                tree.to_string_lossy().into_owned(),
+            )],
+            &NoContainers,
+            cancel_for_thread.as_ref(),
+            &NoopProgress,
+        )
+    });
+    std::thread::sleep(Duration::from_millis(5));
+    cancel.store(true, Ordering::Relaxed);
+    let session = worker.join().unwrap();
+    assert_eq!(session.status, ScanStatus::Cancelled);
+    assert!(start.elapsed() < Duration::from_secs(2));
 }

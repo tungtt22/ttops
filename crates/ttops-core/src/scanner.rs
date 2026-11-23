@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::container::ContainerProvider;
-use crate::fsutil::{last_modified_ms, path_size};
+use crate::fsutil::{last_modified_ms, path_size_until_cancelled};
 use crate::model::{
     Category, Rule, RuleKind, ScanItem, ScanSession, ScanStatus, Target, Unscanned, now_ms,
 };
@@ -128,8 +128,8 @@ fn scan_path(rule: &Rule, path: &Path, session: &mut ScanSession, cancel: &Atomi
     if cancel.load(Ordering::Relaxed) {
         return;
     }
-    match path_size(path) {
-        Ok(size) => session.items.push(item(
+    match path_size_until_cancelled(path, cancel) {
+        Ok(Some(size)) => session.items.push(item(
             rule,
             Target::Path {
                 path: path.to_path_buf(),
@@ -139,6 +139,7 @@ fn scan_path(rule: &Rule, path: &Path, session: &mut ScanSession, cancel: &Atomi
             size,
             last_modified_ms(path).ok().flatten(),
         )),
+        Ok(None) => session.status = ScanStatus::Cancelled,
         Err(error) => session.unscanned.push(Unscanned {
             path: path.to_path_buf(),
             reason: error.kind().to_string(),
