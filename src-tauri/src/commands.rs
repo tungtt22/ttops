@@ -134,7 +134,12 @@ pub fn run_cleanup(
         .cleaner
         .lock()
         .map_err(error)?
-        .run(&preview_id, acknowledge_irreversible)
+        .run_with_progress(&preview_id, acknowledge_irreversible, |run_id, done, total, current| {
+            let _ = app.emit(
+                "cleanup://progress",
+                serde_json::json!({"runId": run_id, "done": done, "total": total, "current": current}),
+            );
+        })
         .map_err(error)?;
     let succeeded = run
         .results

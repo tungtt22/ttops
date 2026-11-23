@@ -119,6 +119,17 @@ impl Cleaner {
         preview_id: &str,
         acknowledge_irreversible: bool,
     ) -> Result<CleanupRun, CleanerError> {
+        self.run_with_progress(preview_id, acknowledge_irreversible, |_, _, _, _| {})
+    }
+    pub fn run_with_progress<F>(
+        &mut self,
+        preview_id: &str,
+        acknowledge_irreversible: bool,
+        mut progress: F,
+    ) -> Result<CleanupRun, CleanerError>
+    where
+        F: FnMut(&str, usize, usize, &ItemResult),
+    {
         if self.used.contains(preview_id) {
             return Err(CleanerError::PreviewUsed);
         }
@@ -149,6 +160,8 @@ impl Cleaner {
                     run.freed_bytes += result.size_bytes;
                 }
                 self.audit.item(&run.id, &result)?;
+                let done = run.results.len() + 1;
+                progress(&run.id, done, run.items.len(), &result);
                 run.results.push(result);
             }
         }

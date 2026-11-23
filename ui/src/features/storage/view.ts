@@ -23,6 +23,9 @@ export async function storageView(root: HTMLElement): Promise<void> {
     if (payload.scanId === activeScanId) void finishScan(payload.scanId);
     else earlyFinishedScanId = payload.scanId;
   });
+  await listen<{ done: number; total: number; current: { label: string } }>("cleanup://progress", ({ payload }) => {
+    root.querySelector("#status")!.textContent = `Cleaning ${payload.done}/${payload.total}: ${payload.current.label}`;
+  });
 
   scanButton.onclick = async () => {
     scanButton.disabled = true;
@@ -55,7 +58,12 @@ function render(root: HTMLElement, scan: Scan): void {
   clean.disabled = !scan.items.some((item) => item.preselected && item.selectable);
   clean.onclick = async () => {
     const selected = scan.items.filter((item) => results.querySelector<HTMLInputElement>(`input[data-id="${CSS.escape(item.id)}"]`)?.checked);
-    try { await confirmCleanup(scan.id, selected); root.querySelector("#status")!.textContent = "Cleanup completed"; } catch (error) { root.querySelector("#status")!.textContent = String(error); }
+    try {
+      const run = await confirmCleanup(scan.id, selected);
+      if (!run) return;
+      const skipped = run.results.filter((result) => result.outcome === "Skipped");
+      root.querySelector("#status")!.textContent = `Cleanup complete: ${bytes(run.freedBytes)} freed; ${run.results.length - skipped.length} succeeded; ${skipped.length} skipped${skipped.length ? ` (${skipped.map((result) => `${result.label}: ${result.reason ?? "failed"}`).join(", ")})` : ""}`;
+    } catch (error) { root.querySelector("#status")!.textContent = String(error); }
   };
 }
 function group(category: string, items: ScanItem[]): HTMLElement {

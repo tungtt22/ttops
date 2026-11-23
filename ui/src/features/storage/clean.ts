@@ -1,6 +1,6 @@
-import { api, bytes, type ScanItem } from "../../api";
+import { api, bytes, type CleanupRun, type ScanItem } from "../../api";
 
-export async function confirmCleanup(scanId: string, selected: ScanItem[]): Promise<void> {
+export async function confirmCleanup(scanId: string, selected: ScanItem[]): Promise<CleanupRun | undefined> {
   const dialog = document.createElement("dialog");
   dialog.className = "dialog";
   const permanent = selected.some((item) => item.permanentOnly);
@@ -12,11 +12,13 @@ export async function confirmCleanup(scanId: string, selected: ScanItem[]): Prom
   if (permanent) acknowledgement.hidden = false;
   dialog.showModal();
   await new Promise<void>((resolve) => dialog.addEventListener("close", () => resolve(), { once: true }));
+  let run: CleanupRun | undefined;
   if (dialog.returnValue === "confirm") {
     const preview = await api.preview(scanId, selected.map((item) => item.id), permanentInput.checked);
     const acknowledged = !preview.requiresIrreversibleAck || dialog.querySelector<HTMLInputElement>("#ack input")!.checked;
     if (!acknowledged) throw new Error("Permanent cleanup requires acknowledgement");
-    await api.run(preview.id, acknowledged);
+    run = await api.run(preview.id, acknowledged);
   }
   dialog.remove();
+  return run;
 }
