@@ -144,19 +144,20 @@ impl Cleaner {
         };
         self.audit.run_started(&run)?;
         for item in &run.items {
-            let result = self.execute(item);
-            if matches!(result.outcome, Outcome::Succeeded) {
-                run.freed_bytes += result.size_bytes;
+            for result in self.execute(item) {
+                if matches!(result.outcome, Outcome::Succeeded) {
+                    run.freed_bytes += result.size_bytes;
+                }
+                self.audit.item(&run.id, &result)?;
+                run.results.push(result);
             }
-            self.audit.item(&run.id, &result)?;
-            run.results.push(result);
         }
         run.finished_at = Some(now_ms());
         run.status = RunStatus::Completed;
         self.audit.run_finished(&run.id, run.freed_bytes)?;
         Ok(run)
     }
-    fn execute(&self, item: &PreviewItem) -> ItemResult {
+    fn execute(&self, item: &PreviewItem) -> Vec<ItemResult> {
         let fail = |reason, message| ItemResult {
             item_id: item.item_id.clone(),
             label: item.label.clone(),
@@ -171,41 +172,43 @@ impl Cleaner {
                 contents_only,
             } => {
                 if !path.exists() {
-                    return fail(SkipReason::NoLongerExists, None);
+                    return vec![fail(SkipReason::NoLongerExists, None)];
                 }
                 if Guard::new(self.platform.as_ref()).check(path).is_err() {
-                    return fail(SkipReason::Protected, None);
+                    return vec![fail(SkipReason::Protected, None)];
+                }
+                if *contents_only {
+                    return delete_contents(self.platform.as_ref(), path, item);
                 }
                 let current_size = path_size(path).unwrap_or(item.size_bytes);
-                let operation = if *contents_only {
-                    delete_contents(self.platform.as_ref(), path, item.action)
-                } else {
-                    delete_path(self.platform.as_ref(), path, item.action)
-                };
+                let operation = delete_path(self.platform.as_ref(), path, item.action);
                 match operation {
-                    Ok(()) => ItemResult {
+                    Ok(()) => vec![ItemResult {
                         item_id: item.item_id.clone(),
                         label: item.label.clone(),
                         size_bytes: current_size,
                         outcome: Outcome::Succeeded,
                         reason: None,
                         message: None,
-                    },
-                    Err(error) => fail(map_error(&error, item.action), Some(error.to_string())),
+                    }],
+                    Err(error) => vec![fail(
+                        map_error(&error, item.action),
+                        Some(error.to_string()),
+                    )],
                 }
             }
             Target::ContainerBuildCache => match self.container.prune_build_cache() {
-                Ok(()) => success(item),
-                Err(error) => fail(SkipReason::Failed, Some(error)),
+                Ok(()) => vec![success(item)],
+                Err(error) => vec![fail(SkipReason::Failed, Some(error))],
             },
             Target::ContainerImage { id, .. } => match self.container.remove_image(id) {
-                Ok(()) => success(item),
-                Err(error) => fail(SkipReason::Failed, Some(error)),
+                Ok(()) => vec![success(item)],
+                Err(error) => vec![fail(SkipReason::Failed, Some(error))],
             },
-            Target::RecycleBin => fail(
+            Target::RecycleBin => vec![fail(
                 SkipReason::Failed,
                 Some("Recycle Bin cleanup is not available on this platform".into()),
-            ),
+            )],
         }
     }
 }
@@ -236,12 +239,71 @@ fn delete_path(platform: &dyn Platform, path: &Path, action: Action) -> std::io:
 fn delete_contents(
     platform: &dyn Platform,
     directory: &Path,
-    action: Action,
-) -> std::io::Result<()> {
-    for entry in std::fs::read_dir(directory)? {
-        delete_path(platform, &entry?.path(), action)?;
+    item: &PreviewItem,
+) -> Vec<ItemResult> {
+    let fail = |path: &Path, reason, message| ItemResult {
+        item_id: item.item_id.clone(),
+        label: path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
+        size_bytes: path_size(path).unwrap_or(0),
+        outcome: Outcome::Skipped,
+        reason: Some(reason),
+        message,
+    };
+    let entries = match std::fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) => {
+            return vec![fail(
+                directory,
+                map_error(&error, item.action),
+                Some(error.to_string()),
+            )];
+        }
+    };
+    let guard = Guard::new(platform);
+    let mut results = Vec::new();
+    for entry in entries {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(error) => {
+                results.push(fail(
+                    directory,
+                    map_error(&error, item.action),
+                    Some(error.to_string()),
+                ));
+                continue;
+            }
+        };
+        // Re-check each child at the last responsible moment; a parent cache is not a safety grant.
+        if guard.check(&path).is_err() {
+            results.push(fail(&path, SkipReason::Protected, None));
+            continue;
+        }
+        let size_bytes = path_size(&path).unwrap_or(0);
+        match delete_path(platform, &path, item.action) {
+            Ok(()) => results.push(ItemResult {
+                item_id: item.item_id.clone(),
+                label: path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned(),
+                size_bytes,
+                outcome: Outcome::Succeeded,
+                reason: None,
+                message: None,
+            }),
+            Err(error) => results.push(fail(
+                &path,
+                map_error(&error, item.action),
+                Some(error.to_string()),
+            )),
+        }
     }
-    Ok(())
+    results
 }
 fn map_error(error: &std::io::Error, action: Action) -> SkipReason {
     match error.kind() {

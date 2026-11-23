@@ -5,7 +5,7 @@ use ttops_core::{
     audit::AuditLog,
     cleaner::{Cleaner, CleanerError},
     container::{ContainerImage, ContainerProvider},
-    model::{Category, Rule, RuleKind, ScanSession},
+    model::{Category, Outcome, Rule, RuleKind, ScanSession, SkipReason},
     platform::{Platform, TestPlatform},
     scanner::{NoopProgress, scan},
 };
@@ -103,4 +103,54 @@ fn permanent_execution_requires_acknowledgement_without_modifying_the_target() {
     assert!(path.exists());
     cleaner.run(&preview.id, true).unwrap();
     assert!(!path.exists());
+}
+
+#[test]
+fn dir_contents_skips_a_protected_child_and_continues_with_safe_siblings() {
+    let temp = tempfile::tempdir().unwrap();
+    let platform = Arc::new(TestPlatform::new(temp.path(), ""));
+    let cache = platform.cache_dir().join("mixed-cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join("safe"), b"safe").unwrap();
+    std::fs::write(cache.join("credentials"), b"secret").unwrap();
+    let scan = scan(
+        platform.as_ref(),
+        &[Rule {
+            id: "mixed-cache".into(),
+            name: "Mixed cache".into(),
+            category: Category::A,
+            kind: RuleKind::DirContents,
+            paths: vec![cache.to_string_lossy().into_owned()],
+            regenerable: true,
+            preselect: true,
+            review_only: false,
+            guidance: None,
+            process_names: vec![],
+            permanent_only: false,
+            outputs: vec![],
+        }],
+        &NoContainers,
+        &AtomicBool::new(false),
+        &NoopProgress,
+    );
+    let mut cleaner = Cleaner::new(
+        platform.clone(),
+        Arc::new(NoContainers),
+        AuditLog::new(temp.path().join("audit.jsonl")),
+    );
+    let preview = cleaner.preview(&scan, &[scan.items[0].id.clone()], true);
+    let run = cleaner.run(&preview.id, true).unwrap();
+
+    assert!(!cache.join("safe").exists());
+    assert!(cache.join("credentials").exists());
+    assert!(run.results.iter().any(|result| {
+        result.label == "credentials"
+            && result.outcome == Outcome::Skipped
+            && result.reason == Some(SkipReason::Protected)
+    }));
+    assert!(
+        run.results
+            .iter()
+            .any(|result| { result.label == "safe" && result.outcome == Outcome::Succeeded })
+    );
 }
