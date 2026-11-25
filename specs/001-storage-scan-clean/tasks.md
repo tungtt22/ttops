@@ -6,7 +6,29 @@
 **Tests**: REQUIRED for core logic by Constitution Principle IV (test-first, temp dirs only).
 Write each test task before its implementation task and confirm it fails first.
 
-## Handoff status (2026-11-22)
+## Handoff status (2026-11-25)
+
+### v0.1.0 release-scope deviation and Tech Lead remediation
+
+The owner narrowed v0.1.0 to **macOS category A only**: developer build outputs (B), review-only
+large data (C), and Windows are deferred to v0.2.0. This preserves a small, safe, testable release
+after Tech Lead review found that the prior documentation claimed scope not present in the catalog.
+
+- Completed remediation: `0042226` guards every `dirContents` child immediately before deletion;
+  protected children are reported as `protected` and safe siblings continue. Temp-dir regression:
+  `cargo test -p ttops-core --test cleaner dir_contents_skips_a_protected_child_and_continues_with_safe_siblings`.
+- Completed remediation: `c78bd5d` adds the data-driven macOS category A catalog and a seeded
+  `TestPlatform` / fake-container catalog-and-scanner regression.
+- Completed remediation: `ed89aed` checks cancellation during tree traversal and includes the
+  representative large-tree two-second bound test.
+- Completed remediation: `2508c2b` emits `cleanup://progress`, returns cleanup results to the UI,
+  and renders freed bytes, succeeded items, and skipped reasons. Command event summary coverage is
+  in `src-tauri/src/commands.rs`.
+
+The remaining Phase 5–8 tasks are v0.2.0 scope unless explicitly reprioritized. Do not claim B/C,
+Windows, or persisted History as v0.1.0 functionality.
+
+### Earlier implementation handoff (2026-11-22)
 
 Scoping is complete. Implementation was started and then handed off; continue from here.
 
@@ -60,7 +82,7 @@ Scoping is complete. Implementation was started and then handed off; continue fr
 
 ## Phase 3: User Story 1 — See disk usage and reclaimable space (P1) 🎯 MVP
 
-**Goal**: volume summary + read-only cancellable scan of category A (and C model stores) grouped with sizes.
+**Goal**: v0.1.0 volume summary + read-only cancellable scan of macOS category A grouped with sizes.
 **Independent Test**: seeded temp home → items/sizes match; before/after snapshot unchanged; cancel → `cancelled`.
 
 - [X] T020 [P] [US1] Write failing tests `crates/ttops-core/tests/scanner.rs`: categories and sizes for seeded `dirContents`/`dir`/`glob` rules, read-only snapshot equality (SC-004), cancellation, unreadable dir listed in `unscanned`, missing paths silently skipped
@@ -73,7 +95,7 @@ Scoping is complete. Implementation was started and then handed off; continue fr
 
 ## Phase 4: User Story 2 — Clean selected items safely (P1) 🎯 MVP
 
-**Goal**: preview → confirm → Trash (default) / permanent (ack) with per-item results and audit.
+**Goal**: v0.1.0 category A preview → confirm → Trash (default) / permanent (ack) with per-item results and audit.
 **Independent Test**: seeded temp home → selected A items land in TestPlatform trash; reasons for skipped items.
 
 - [X] T027 [P] [US2] Write failing tests `crates/ttops-core/tests/cleaner.rs`: preview has no side effects; unknown/reused preview rejected; permanent without ack changes nothing; trash mode moves items; vanished item ⇒ `noLongerExists`; protected path ⇒ `protected`; `processNames` running ⇒ `inUse`; `permanentOnly` forces permanent; container image removal via fake provider; audit records written

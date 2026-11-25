@@ -15,10 +15,11 @@
 Expected: all pass. Key suites:
 
 - `guard` — protected roots, link escapes, credential name patterns are refused (SC-003).
-- `scanner` — seeded temp home: items/categories/sizes match; before/after snapshot identical (SC-004);
-  cancel stops and marks incomplete.
+- `scanner` — seeded temp home: macOS category A items/sizes match; before/after snapshot identical
+  (SC-004); cancellation during a representative large tree stops and marks the scan incomplete.
 - `cleaner` — preview required; reused preview rejected; permanent needs ack; vanished/locked items
-  skipped with reason; trash mode moves into the fake platform's trash dir.
+  skipped with reason; protected children are skipped while safe siblings continue; trash mode moves
+  into the fake platform's trash dir.
 - `audit` — run without `runFinished` reads back as `interrupted` (SC-006).
 
 ## Run the app
@@ -31,11 +32,13 @@ npm --prefix ui run tauri dev
 Manual checks:
 
 1. Storage view shows total/used/free of the home volume (FR-001).
-2. Click **Scan**; categories A/B/C fill in with sizes; Cancel works (US1).
+2. Click **Scan**; the macOS category A safe-cache results fill in with sizes; Cancel works (US1).
 3. Only A items are ticked; open **Clean** → preview lists items, total, "Move to Trash" (US2).
 4. Toggle permanent → second confirmation appears.
-5. After cleanup, result shows freed and skipped items; **History** shows the run (US5).
-6. Add a project root under category B; build folders appear with age (US3).
+5. After cleanup, per-item progress appears and the final result shows freed bytes, succeeded items,
+   and skipped items with reasons (US2).
+6. Category B project-output scanning, category C review-only data, Windows support, and persisted
+   History are deferred to v0.2.0.
 
 ## Build release
 

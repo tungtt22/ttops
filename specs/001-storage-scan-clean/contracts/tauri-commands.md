@@ -12,7 +12,7 @@ Types refer to [data-model.md](../data-model.md). Errors are returned as
 | `cancel_scan` | `{ scanId }` | – | stops within 2 s; session status `cancelled` |
 | `get_scan` | `{ scanId }` | `ScanSession` | |
 | `preview_cleanup` | `{ scanId, itemIds: string[], permanent: bool }` | `CleanupPreview` | no side effects |
-| `run_cleanup` | `{ previewId, acknowledgeIrreversible: bool }` | `{ runId }` | errors: `unknownPreview`, `previewUsed`, `ackRequired`, `cleanupRunning` |
+| `run_cleanup` | `{ previewId, acknowledgeIrreversible: bool }` | `CleanupRun` (including `freedBytes` and per-item `results`) | errors: `unknownPreview`, `previewUsed`, `ackRequired`, `cleanupRunning` |
 | `list_runs` | – | `CleanupRunSummary[]` (newest first) | summary = run without `results` + counts |
 | `get_run` | `{ runId }` | `CleanupRun` | |
 | `get_settings` | – | `Settings` | |

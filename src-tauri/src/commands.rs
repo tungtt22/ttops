@@ -24,6 +24,20 @@ pub struct ScanStarted {
     scan_id: String,
 }
 
+fn cleanup_finished(run: &CleanupRun) -> serde_json::Value {
+    let succeeded = run
+        .results
+        .iter()
+        .filter(|result| matches!(result.outcome, ttops_core::model::Outcome::Succeeded))
+        .count();
+    serde_json::json!({
+        "runId": run.id,
+        "freedBytes": run.freed_bytes,
+        "succeeded": succeeded,
+        "skipped": run.results.len().saturating_sub(succeeded),
+    })
+}
+
 struct TauriProgress {
     app: tauri::AppHandle,
     scan_id: String,
@@ -141,12 +155,52 @@ pub fn run_cleanup(
             );
         })
         .map_err(error)?;
-    let succeeded = run
-        .results
-        .iter()
-        .filter(|result| matches!(result.outcome, ttops_core::model::Outcome::Succeeded))
-        .count();
-    let skipped = run.results.len().saturating_sub(succeeded);
-    app.emit("cleanup://finished", serde_json::json!({"runId": run.id, "freedBytes": run.freed_bytes, "succeeded": succeeded, "skipped": skipped})).map_err(error)?;
+    app.emit("cleanup://finished", cleanup_finished(&run))
+        .map_err(error)?;
     Ok(run)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cleanup_finished;
+    use ttops_core::model::{Action, CleanupRun, ItemResult, Outcome, RunStatus, SkipReason};
+
+    #[test]
+    fn cleanup_finished_summarizes_freed_succeeded_and_skipped_results() {
+        let run = CleanupRun {
+            id: "run-1".into(),
+            preview_id: "preview-1".into(),
+            started_at: 0,
+            finished_at: Some(1),
+            mode: Action::Trash,
+            status: RunStatus::Completed,
+            items: vec![],
+            results: vec![
+                ItemResult {
+                    item_id: "safe".into(),
+                    label: "safe".into(),
+                    size_bytes: 12,
+                    outcome: Outcome::Succeeded,
+                    reason: None,
+                    message: None,
+                },
+                ItemResult {
+                    item_id: "protected".into(),
+                    label: "protected".into(),
+                    size_bytes: 7,
+                    outcome: Outcome::Skipped,
+                    reason: Some(SkipReason::Protected),
+                    message: None,
+                },
+            ],
+            freed_bytes: 12,
+        };
+
+        let finished = cleanup_finished(&run);
+
+        assert_eq!(finished["runId"], "run-1");
+        assert_eq!(finished["freedBytes"], 12);
+        assert_eq!(finished["succeeded"], 1);
+        assert_eq!(finished["skipped"], 1);
+    }
 }
