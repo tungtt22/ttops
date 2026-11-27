@@ -1,12 +1,16 @@
 //! Read-only scan engine. Filesystem traversal never follows symlinks.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::container::ContainerProvider;
+use walkdir::WalkDir;
+
 use crate::fsutil::{last_modified_ms, path_size_until_cancelled};
+use crate::guard::Guard;
 use crate::model::{
-    Category, Rule, RuleKind, ScanItem, ScanSession, ScanStatus, Target, Unscanned, now_ms,
+    Category, Rule, RuleKind, ScanItem, ScanSession, ScanStatus, Settings, Target, Unscanned,
+    now_ms,
 };
 use crate::platform::Platform;
 use crate::rules::expand_paths;
@@ -49,6 +53,37 @@ pub fn scan_with_id(
     cancel: &AtomicBool,
     progress: &dyn ProgressSink,
 ) -> ScanSession {
+    scan_with_settings(
+        id,
+        platform,
+        rules,
+        &Settings::default(),
+        container,
+        cancel,
+        progress,
+    )
+}
+
+/// Scans every rule. `largeFiles` rules run last so they can skip paths that
+/// other rules already claimed and sizes are never counted twice.
+pub fn scan_with_settings(
+    id: String,
+    platform: &dyn Platform,
+    rules: &[Rule],
+    settings: &Settings,
+    container: &dyn ContainerProvider,
+    cancel: &AtomicBool,
+    progress: &dyn ProgressSink,
+) -> ScanSession {
+    let guard = Guard::new(platform);
+    let ordered = rules
+        .iter()
+        .filter(|rule| rule.kind != RuleKind::LargeFiles)
+        .chain(
+            rules
+                .iter()
+                .filter(|rule| rule.kind == RuleKind::LargeFiles),
+        );
     let mut session = ScanSession {
         id,
         started_at: now_ms(),
@@ -61,7 +96,7 @@ pub fn scan_with_id(
     if cancel.load(Ordering::Relaxed) {
         session.status = ScanStatus::Cancelled;
     }
-    for rule in rules {
+    for rule in ordered {
         if cancel.load(Ordering::Relaxed) {
             session.status = ScanStatus::Cancelled;
             break;
@@ -104,6 +139,23 @@ pub fn scan_with_id(
             RuleKind::Dir | RuleKind::DirContents | RuleKind::Children => {
                 for path in expand_paths(rule, platform) {
                     scan_path(rule, &path, &mut session, cancel);
+                }
+            }
+            RuleKind::ProjectOutputs => {
+                for root in &settings.project_roots {
+                    scan_project_outputs(rule, root, &guard, &mut session, cancel);
+                }
+            }
+            RuleKind::LargeFiles => {
+                for root in expand_paths(rule, platform) {
+                    scan_large_files(
+                        rule,
+                        &root,
+                        settings.large_file_threshold_bytes,
+                        &guard,
+                        &mut session,
+                        cancel,
+                    );
                 }
             }
             _ => {}
@@ -172,6 +224,161 @@ fn scan_children(rule: &Rule, directory: &Path, session: &mut ScanSession, cance
         );
     }
 }
+const MS_PER_DAY: u64 = 86_400_000;
+
+/// Finds build outputs under a user-chosen root. Matching folders are not
+/// descended into, so only the outermost output is listed.
+fn scan_project_outputs(
+    rule: &Rule,
+    root: &Path,
+    guard: &Guard,
+    session: &mut ScanSession,
+    cancel: &AtomicBool,
+) {
+    let mut walker = WalkDir::new(root).follow_links(false).into_iter();
+    while let Some(entry) = walker.next() {
+        if cancel.load(Ordering::Relaxed) {
+            session.status = ScanStatus::Cancelled;
+            return;
+        }
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                if error.depth() == 0 {
+                    session.unscanned.push(Unscanned {
+                        path: root.to_path_buf(),
+                        reason: error.to_string(),
+                    });
+                }
+                continue;
+            }
+        };
+        if entry.depth() == 0 || !entry.file_type().is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy();
+        if name == ".git" {
+            walker.skip_current_dir();
+            continue;
+        }
+        let path = entry.path();
+        let Some(project) = path.parent() else {
+            continue;
+        };
+        let matched = rule.outputs.iter().any(|output| {
+            output.name == name
+                && (output.markers.is_empty()
+                    || output
+                        .markers
+                        .iter()
+                        .any(|marker| project.join(marker).exists()))
+        });
+        if !matched {
+            continue;
+        }
+        walker.skip_current_dir();
+        if guard.check(path).is_err() {
+            continue;
+        }
+        match path_size_until_cancelled(path, cancel) {
+            Ok(Some(size)) => {
+                let mut found = item(
+                    rule,
+                    Target::Path {
+                        path: path.to_path_buf(),
+                        contents_only: false,
+                    },
+                    format!("{name} — {}", project.display()),
+                    size,
+                    last_modified_ms(path).ok().flatten(),
+                );
+                found.project_path = Some(project.to_path_buf());
+                found.project_age_days = project_age_days(rule, project);
+                session.items.push(found);
+            }
+            Ok(None) => {
+                session.status = ScanStatus::Cancelled;
+                return;
+            }
+            Err(error) => session.unscanned.push(Unscanned {
+                path: path.to_path_buf(),
+                reason: error.kind().to_string(),
+            }),
+        }
+    }
+}
+
+/// Days since the newest top-level project entry changed, ignoring outputs.
+fn project_age_days(rule: &Rule, project: &Path) -> Option<u32> {
+    let newest = std::fs::read_dir(project)
+        .ok()?
+        .flatten()
+        .filter(|entry| {
+            let name = entry.file_name();
+            !rule.outputs.iter().any(|output| *output.name == *name)
+        })
+        .filter_map(|entry| last_modified_ms(&entry.path()).ok().flatten())
+        .max()
+        .or_else(|| last_modified_ms(project).ok().flatten())?;
+    Some((now_ms().saturating_sub(newest) / MS_PER_DAY) as u32)
+}
+
+/// Lists files at or above the threshold that no earlier rule claimed and
+/// the guard does not protect. Unreadable folders are skipped silently.
+fn scan_large_files(
+    rule: &Rule,
+    root: &Path,
+    threshold: u64,
+    guard: &Guard,
+    session: &mut ScanSession,
+    cancel: &AtomicBool,
+) {
+    let claimed: Vec<PathBuf> = session
+        .items
+        .iter()
+        .filter_map(|item| match &item.target {
+            Target::Path { path, .. } => Some(path.clone()),
+            _ => None,
+        })
+        .collect();
+    let mut walker = WalkDir::new(root).follow_links(false).into_iter();
+    while let Some(entry) = walker.next() {
+        if cancel.load(Ordering::Relaxed) {
+            session.status = ScanStatus::Cancelled;
+            return;
+        }
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let path = entry.path();
+        if claimed.iter().any(|claim| path.starts_with(claim)) {
+            if entry.file_type().is_dir() {
+                walker.skip_current_dir();
+            }
+            continue;
+        }
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if metadata.len() < threshold || guard.check(path).is_err() {
+            continue;
+        }
+        session.items.push(item(
+            rule,
+            Target::Path {
+                path: path.to_path_buf(),
+                contents_only: false,
+            },
+            path.display().to_string(),
+            metadata.len(),
+            last_modified_ms(path).ok().flatten(),
+        ));
+    }
+}
+
 fn item(
     rule: &Rule,
     target: Target,

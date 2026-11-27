@@ -15,3 +15,22 @@ kind = "trash"
 regenerable = true
 preselect = false
 permanentOnly = true
+
+[[rules]]
+id = "project-build-outputs"
+name = "Project build outputs"
+category = "B"
+kind = "projectOutputs"
+regenerable = true
+outputs = [
+  { name = "node_modules", markers = ["package.json"] },
+  { name = "target", markers = ["Cargo.toml", "pom.xml"] },
+  { name = ".venv" },
+]
+
+[[rules]]
+id = "large-files"
+name = "Large files"
+category = "C"
+kind = "largeFiles"
+paths = ["~"]

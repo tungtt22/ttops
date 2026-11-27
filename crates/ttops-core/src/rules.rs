@@ -101,6 +101,9 @@ fn validate(rules: &[Rule]) -> Result<(), RuleError> {
                 rule.id
             )));
         }
+        if rule.kind == RuleKind::ProjectOutputs && rule.outputs.is_empty() {
+            return Err(RuleError::Invalid(format!("outputs required: {}", rule.id)));
+        }
         if matches!(
             rule.kind,
             RuleKind::Dir | RuleKind::DirContents | RuleKind::Children | RuleKind::LargeFiles
