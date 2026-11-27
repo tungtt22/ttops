@@ -14,6 +14,7 @@ use crate::model::{
     RunStatus, ScanSession, SkipReason, Target, now_ms,
 };
 use crate::platform::Platform;
+use crate::tools::{NoTools, ToolProvider};
 
 static NEXT_PREVIEW: AtomicU64 = AtomicU64::new(1);
 #[derive(Debug, thiserror::Error)]
@@ -31,6 +32,7 @@ pub enum CleanerError {
 pub struct Cleaner {
     platform: Arc<dyn Platform>,
     container: Arc<dyn ContainerProvider>,
+    tools: Arc<dyn ToolProvider>,
     audit: AuditLog,
     previews: HashMap<String, CleanupPreview>,
     used: HashSet<String>,
@@ -44,10 +46,16 @@ impl Cleaner {
         Self {
             platform,
             container,
+            tools: Arc::new(NoTools),
             audit,
             previews: HashMap::new(),
             used: HashSet::new(),
         }
+    }
+    /// Uses `tools` for external tool cleanups (Homebrew).
+    pub fn with_tools(mut self, tools: Arc<dyn ToolProvider>) -> Self {
+        self.tools = tools;
+        self
     }
     pub fn preview(
         &mut self,
@@ -57,6 +65,9 @@ impl Cleaner {
     ) -> CleanupPreview {
         let guard = Guard::new(self.platform.as_ref());
         let requested: HashSet<_> = item_ids.iter().collect();
+        let keep = keep_one_copy(scan, &requested);
+        let running = self.platform.running_processes();
+        let app_dirs = self.platform.app_dirs();
         let mut items = Vec::new();
         let mut refused = Vec::new();
         for item in scan
@@ -64,7 +75,14 @@ impl Cleaner {
             .iter()
             .filter(|item| requested.contains(&item.id))
         {
-            if !item.selectable {
+            if keep.contains(&item.id) {
+                refused.push(Refusal {
+                    item_id: item.id.clone(),
+                    reason: RefusalReason::KeepOneCopy,
+                });
+                continue;
+            }
+            if !item.selectable || matches!(item.target, Target::None) {
                 refused.push(Refusal {
                     item_id: item.id.clone(),
                     reason: RefusalReason::NotSelectable,
@@ -80,10 +98,35 @@ impl Cleaner {
                 });
                 continue;
             }
-            let action = if permanent || item.permanent_only {
-                Action::Permanent
-            } else {
-                Action::Trash
+            if let Target::App {
+                path,
+                bundle_id,
+                executable,
+                ..
+            } = &item.target
+            {
+                if crate::apps::is_apple(bundle_id) || crate::apps::is_running(executable, &running)
+                {
+                    refused.push(Refusal {
+                        item_id: item.id.clone(),
+                        reason: RefusalReason::AppNotRemovable,
+                    });
+                    continue;
+                }
+                if guard.check_app_bundle(path, &app_dirs).is_err() {
+                    refused.push(Refusal {
+                        item_id: item.id.clone(),
+                        reason: RefusalReason::Protected,
+                    });
+                    continue;
+                }
+            }
+            // Uninstalls always go to the Trash; external tools are always permanent.
+            let action = match &item.target {
+                Target::App { .. } => Action::Trash,
+                Target::Tool { .. } | Target::Container { .. } => Action::Permanent,
+                _ if permanent || item.permanent_only => Action::Permanent,
+                _ => Action::Trash,
             };
             items.push(PreviewItem {
                 item_id: item.id.clone(),
@@ -92,6 +135,7 @@ impl Cleaner {
                 target: item.target.clone(),
                 size_bytes: item.size_bytes,
                 action,
+                details: item.details.clone(),
             });
         }
         let mode = if items.iter().any(|item| item.action == Action::Permanent) {
@@ -193,7 +237,7 @@ impl Cleaner {
                 if *contents_only {
                     return delete_contents(self.platform.as_ref(), path, item);
                 }
-                let current_size = path_size(path).unwrap_or(item.size_bytes);
+                let current_size = measured_size(self.platform.as_ref(), path, item.size_bytes);
                 let operation = delete_path(self.platform.as_ref(), path, item.action);
                 match operation {
                     Ok(()) => vec![ItemResult {
@@ -222,8 +266,144 @@ impl Cleaner {
                 SkipReason::Failed,
                 Some("Recycle Bin cleanup is not available on this platform".into()),
             )],
+            Target::App {
+                path,
+                bundle_id,
+                executable,
+                leftovers,
+            } => self.uninstall(item, path, bundle_id, executable, leftovers),
+            Target::Tool { command } => match self.tools.run(*command) {
+                Ok(()) => vec![success(item)],
+                Err(error) => vec![fail(SkipReason::Failed, Some(error))],
+            },
+            Target::Container { id, .. } => match self.container.remove_container(id) {
+                Ok(()) => vec![success(item)],
+                Err(error) => vec![fail(SkipReason::InUse, Some(error))],
+            },
+            Target::None => vec![fail(SkipReason::Failed, Some("review only".into()))],
         }
     }
+
+    /// Re-checks the uninstall exception at execution, then moves the bundle and
+    /// each guard-approved leftover to the Trash. Never permanent.
+    fn uninstall(
+        &self,
+        item: &PreviewItem,
+        path: &Path,
+        bundle_id: &str,
+        executable: &str,
+        leftovers: &[std::path::PathBuf],
+    ) -> Vec<ItemResult> {
+        let result = |label: String, size_bytes, reason: Option<SkipReason>, message| ItemResult {
+            item_id: item.item_id.clone(),
+            label,
+            size_bytes,
+            outcome: if reason.is_none() {
+                Outcome::Succeeded
+            } else {
+                Outcome::Skipped
+            },
+            reason,
+            message,
+        };
+        if !path.exists() {
+            return vec![result(
+                item.label.clone(),
+                0,
+                Some(SkipReason::NoLongerExists),
+                None,
+            )];
+        }
+        if crate::apps::is_running(executable, &self.platform.running_processes()) {
+            return vec![result(
+                item.label.clone(),
+                0,
+                Some(SkipReason::InUse),
+                Some("quit the app first".into()),
+            )];
+        }
+        let guard = Guard::new(self.platform.as_ref());
+        if crate::apps::is_apple(bundle_id)
+            || guard
+                .check_app_bundle(path, &self.platform.app_dirs())
+                .is_err()
+        {
+            return vec![result(
+                item.label.clone(),
+                0,
+                Some(SkipReason::Protected),
+                None,
+            )];
+        }
+        let bundle_size = measured_size(self.platform.as_ref(), path, 0);
+        let mut results = vec![
+            match delete_path(self.platform.as_ref(), path, Action::Trash) {
+                Ok(()) => result(path.display().to_string(), bundle_size, None, None),
+                Err(error) => {
+                    // Without the bundle gone, leave the leftovers in place too.
+                    return vec![result(
+                        path.display().to_string(),
+                        0,
+                        Some(map_error(&error, Action::Trash)),
+                        Some(error.to_string()),
+                    )];
+                }
+            },
+        ];
+        for leftover in leftovers {
+            let label = leftover.display().to_string();
+            if !leftover.exists() {
+                results.push(result(label, 0, Some(SkipReason::NoLongerExists), None));
+                continue;
+            }
+            if guard.check(leftover).is_err() {
+                results.push(result(label, 0, Some(SkipReason::Protected), None));
+                continue;
+            }
+            let size = measured_size(self.platform.as_ref(), leftover, 0);
+            results.push(
+                match delete_path(self.platform.as_ref(), leftover, Action::Trash) {
+                    Ok(()) => result(label, size, None, None),
+                    Err(error) => result(
+                        label,
+                        0,
+                        Some(map_error(&error, Action::Trash)),
+                        Some(error.to_string()),
+                    ),
+                },
+            );
+        }
+        results
+    }
+}
+
+/// Size for results without reading inside privacy-guarded folders, which would
+/// block on a macOS consent prompt; those report the size known at scan time.
+fn measured_size(platform: &dyn Platform, path: &Path, known: u64) -> u64 {
+    if crate::apps::is_privacy_guarded(platform, path) {
+        return known;
+    }
+    path_size(path).unwrap_or(known)
+}
+
+/// When every copy of a duplicate group is requested, refuse the oldest copy so one remains.
+fn keep_one_copy(scan: &ScanSession, requested: &HashSet<&String>) -> HashSet<String> {
+    let mut groups: HashMap<&str, Vec<&crate::model::ScanItem>> = HashMap::new();
+    for item in &scan.items {
+        if let Some(group) = &item.duplicate_group {
+            groups.entry(group).or_default().push(item);
+        }
+    }
+    groups
+        .values()
+        .filter(|members| members.iter().all(|item| requested.contains(&item.id)))
+        .filter_map(|members| {
+            members
+                .iter()
+                .min_by_key(|item| (item.last_modified.unwrap_or(u64::MAX), item.id.clone()))
+                .map(|item| item.id.clone())
+        })
+        .collect()
 }
 fn success(item: &PreviewItem) -> ItemResult {
     ItemResult {

@@ -4,7 +4,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::model::VolumeSummary;
+use crate::model::{BundleInfo, StartupScope, VolumeSummary};
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -38,6 +38,41 @@ pub trait Platform: Send + Sync {
     /// Lower-cased names of running processes.
     fn running_processes(&self) -> Vec<String>;
     fn volume_summary(&self) -> Option<VolumeSummary>;
+    /// Folders whose direct children are uninstallable application bundles.
+    fn app_dirs(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+    /// The user's Library folder (macOS) holding app leftovers.
+    fn library_dir(&self) -> Option<PathBuf> {
+        None
+    }
+    /// Startup item folders and their scope.
+    fn launch_dirs(&self) -> Vec<(PathBuf, StartupScope)> {
+        Vec::new()
+    }
+    /// Reads a property list as JSON; `None` when unreadable.
+    fn read_plist(&self, _path: &Path) -> Option<serde_json::Value> {
+        None
+    }
+    /// Bundle id, display name and executable of an application bundle.
+    fn bundle_info(&self, app: &Path) -> Option<BundleInfo> {
+        let info = self.read_plist(&app.join("Contents/Info.plist"))?;
+        let text = |key: &str| info.get(key).and_then(|v| v.as_str()).map(str::to_owned);
+        let bundle_id = text("CFBundleIdentifier")?;
+        let fallback = app
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        Some(BundleInfo {
+            name: text("CFBundleName").unwrap_or_else(|| fallback.clone()),
+            executable: text("CFBundleExecutable").unwrap_or(fallback),
+            bundle_id,
+        })
+    }
+    /// Numeric id of the current user, used for `gui/<uid>` launchd domains.
+    fn user_id(&self) -> Option<u32> {
+        None
+    }
 }
 
 /// Platform for the OS this binary was built for. `None` means the home
@@ -136,7 +171,11 @@ impl Platform for TestPlatform {
         (name == "TTOPS_TEST").then(|| self.home().join("env").to_string_lossy().into_owned())
     }
     fn protected_roots(&self) -> Vec<PathBuf> {
-        let mut roots = vec![self.root.join("system"), self.home().join(".ssh")];
+        let mut roots = vec![
+            self.root.join("system"),
+            self.root.join("Applications"),
+            self.home().join(".ssh"),
+        ];
         roots.extend(self.extra_protected.iter().cloned());
         roots
     }
@@ -162,6 +201,28 @@ impl Platform for TestPlatform {
     }
     fn running_processes(&self) -> Vec<String> {
         self.processes.clone()
+    }
+    fn app_dirs(&self) -> Vec<PathBuf> {
+        vec![self.root.join("Applications")]
+    }
+    fn library_dir(&self) -> Option<PathBuf> {
+        Some(self.home().join("Library"))
+    }
+    fn launch_dirs(&self) -> Vec<(PathBuf, StartupScope)> {
+        vec![
+            (
+                self.home().join("Library/LaunchAgents"),
+                StartupScope::UserAgent,
+            ),
+            (self.root.join("LaunchDaemons"), StartupScope::SystemDaemon),
+        ]
+    }
+    /// Test plists are plain JSON files.
+    fn read_plist(&self, path: &Path) -> Option<serde_json::Value> {
+        serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+    }
+    fn user_id(&self) -> Option<u32> {
+        Some(501)
     }
     fn volume_summary(&self) -> Option<VolumeSummary> {
         Some(VolumeSummary {

@@ -72,6 +72,9 @@ const TITLES: Record<string, string> = { A: "Safe caches (A)", B: "Developer bui
 function describe(item: ScanItem): string {
   const parts = [`${item.label} (${bytes(item.sizeBytes)})`];
   if (item.projectAgeDays !== undefined && item.projectAgeDays !== null) parts.push(`project untouched ${item.projectAgeDays} day(s)`);
+  if (item.idleDays !== undefined && item.idleDays !== null) parts.push(`unused ${item.idleDays} day(s)`);
+  if (item.duplicateGroup) parts.push(`duplicate group ${item.duplicateGroup.slice(-6)}`);
+  if (item.details?.length) parts.push(`${item.details.length} detail(s) in preview`);
   if (item.guidance) parts.push(item.guidance);
   return parts.join(" — ");
 }
@@ -107,28 +110,39 @@ function group(category: string, items: ScanItem[]): HTMLElement {
   return section;
 }
 
+type RootKey = "projectRoots" | "reviewRoots";
+
 async function settingsPanel(panel: HTMLElement): Promise<void> {
   let settings: Settings;
   try { settings = await api.getSettings(); } catch (error) { panel.textContent = `Settings unavailable: ${String(error)}`; return; }
+  const roots = (key: RootKey, title: string, empty: string) => {
+    const box = document.createElement("div");
+    const heading = document.createElement("p"); heading.textContent = settings[key].length ? title : empty; box.append(heading);
+    for (const root of settings[key]) {
+      const row = document.createElement("div"); row.className = "item";
+      const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "Remove";
+      remove.onclick = () => void save({ ...settings, [key]: settings[key].filter((other) => other !== root) });
+      row.append(document.createTextNode(root + " "), remove); box.append(row);
+    }
+    const input = document.createElement("input"); input.placeholder = "Absolute folder path"; input.size = 48;
+    const add = document.createElement("button"); add.type = "button"; add.textContent = "Add folder";
+    add.onclick = () => { const value = input.value.trim(); if (value) void save({ ...settings, [key]: [...settings[key], value] }); };
+    box.append(input, add);
+    return box;
+  };
   const draw = (message = "") => {
     panel.replaceChildren();
     const heading = document.createElement("h2"); heading.textContent = "Scan settings"; panel.append(heading);
-    const rootsTitle = document.createElement("p"); rootsTitle.textContent = settings.projectRoots.length ? "Project folders (category B):" : "No project folders yet. Add one to find build outputs (category B)."; panel.append(rootsTitle);
-    for (const root of settings.projectRoots) {
-      const row = document.createElement("div"); row.className = "item";
-      const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "Remove";
-      remove.onclick = () => void save({ ...settings, projectRoots: settings.projectRoots.filter((other) => other !== root) });
-      row.append(document.createTextNode(root + " "), remove); panel.append(row);
-    }
-    const input = document.createElement("input"); input.placeholder = "Absolute folder path to your projects"; input.size = 48;
-    const add = document.createElement("button"); add.type = "button"; add.textContent = "Add folder";
-    add.onclick = () => { const value = input.value.trim(); if (value) void save({ ...settings, projectRoots: [...settings.projectRoots, value] }); };
+    panel.append(
+      roots("projectRoots", "Project folders (build outputs, category B):", "No project folders yet. Add one to find build outputs (category B)."),
+      roots("reviewRoots", "Folders searched for duplicate files (category C):", "No duplicate-search folders yet. Add one, for example your Pictures or Downloads folder."),
+    );
     const threshold = document.createElement("input"); threshold.type = "number"; threshold.min = "0.1"; threshold.step = "0.1";
     threshold.value = String(+(settings.largeFileThresholdBytes / 2 ** 30).toFixed(2));
     threshold.onchange = () => void save({ ...settings, largeFileThresholdBytes: Math.round(Number(threshold.value) * 2 ** 30) });
     const thresholdLabel = document.createElement("label"); thresholdLabel.append("Large file threshold (GB, category C): ", threshold);
     const status = document.createElement("p"); status.textContent = message;
-    panel.append(input, add, thresholdLabel, status);
+    panel.append(thresholdLabel, status);
   };
   const save = async (next: Settings) => {
     try { settings = await api.setSettings(next); draw("Saved. Scan again to update results."); }

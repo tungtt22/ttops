@@ -7,11 +7,12 @@ use std::{
 use serde::Serialize;
 use tauri::{Emitter, State};
 use ttops_core::{
+    apps::scan_apps,
     guard::Guard,
-    model::{CleanupPreview, CleanupRun, ScanSession, Settings, VolumeSummary},
+    model::{CleanupPreview, CleanupRun, ScanSession, Settings, StartupItem, VolumeSummary},
     rules::load_platform_catalog,
-    scanner::{ProgressSink, scan_with_settings},
-    settings,
+    scanner::{ProgressSink, scan_with_tools},
+    settings, startup,
 };
 
 use crate::state::AppState;
@@ -86,6 +87,7 @@ pub fn start_scan(
     let (scan_id, cancel) = state.scans.begin()?;
     let platform = state.platform.clone();
     let container = state.container.clone();
+    let tools = state.tools.clone();
     let scans = state.scans.clone();
     let app_for_scan = app.clone();
     let scan_id_for_thread = scan_id.clone();
@@ -96,12 +98,13 @@ pub fn start_scan(
             scan_id: scan_id_for_thread.clone(),
             last_sent: Mutex::new(None),
         };
-        let session = scan_with_settings(
+        let session = scan_with_tools(
             scan_id_for_thread.clone(),
             platform.as_ref(),
             &rules,
             &settings,
             container.as_ref(),
+            tools.as_ref(),
             cancel.as_ref(),
             &progress,
         );
@@ -114,6 +117,52 @@ pub fn start_scan(
     });
 
     Ok(ScanStarted { scan_id })
+}
+
+/// Scans installed apps and leftovers in the background; emits `scan://finished`.
+#[tauri::command]
+pub fn start_app_scan(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ScanStarted, String> {
+    let (scan_id, cancel) = state.scans.begin()?;
+    let platform = state.platform.clone();
+    let scans = state.scans.clone();
+    let id = scan_id.clone();
+    thread::spawn(move || {
+        let mut session = scan_apps(platform.as_ref(), cancel.as_ref());
+        session.id = id.clone();
+        let status = session.status;
+        let _ = scans.finish(session);
+        let _ = app.emit(
+            "scan://finished",
+            serde_json::json!({"scanId": id, "status": status}),
+        );
+    });
+    Ok(ScanStarted { scan_id })
+}
+
+#[tauri::command]
+pub fn list_startup_items(state: State<'_, AppState>) -> Vec<StartupItem> {
+    startup::list_items(state.platform.as_ref(), state.launch.as_ref())
+}
+
+#[tauri::command]
+pub fn set_startup_item_enabled(
+    label: String,
+    enabled: bool,
+    acknowledged: bool,
+    state: State<'_, AppState>,
+) -> Result<StartupItem, String> {
+    startup::set_enabled(
+        state.platform.as_ref(),
+        state.launch.as_ref(),
+        &state.audit,
+        &label,
+        enabled,
+        acknowledged,
+    )
+    .map_err(error)
 }
 
 #[tauri::command]

@@ -39,6 +39,12 @@ enum Record {
         freed_bytes: u64,
         at: Timestamp,
     },
+    /// A user startup item was enabled or disabled.
+    StartupToggle {
+        label: String,
+        enabled: bool,
+        at: Timestamp,
+    },
 }
 
 pub struct AuditLog {
@@ -86,6 +92,13 @@ impl AuditLog {
         self.append(&Record::RunFinished {
             run_id: run_id.to_owned(),
             freed_bytes,
+            at: now_ms(),
+        })
+    }
+    pub fn startup_toggle(&self, label: &str, enabled: bool) -> Result<(), AuditError> {
+        self.append(&Record::StartupToggle {
+            label: label.to_owned(),
+            enabled,
             at: now_ms(),
         })
     }
@@ -139,6 +152,7 @@ impl AuditLog {
                         run.status = RunStatus::Completed;
                     }
                 }
+                Record::StartupToggle { .. } => {}
             }
         }
         let mut values: Vec<_> = runs.into_values().collect();

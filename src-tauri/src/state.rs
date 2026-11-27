@@ -9,11 +9,16 @@ use ttops_core::{
     container::{ContainerProvider, DockerProvider},
     model::{ScanSession, now_ms},
     platform::Platform,
+    startup::{LaunchControl, Launchctl},
+    tools::{BrewProvider, ToolProvider},
 };
+
+/// Completed scans kept for preview (storage and apps can coexist).
+const KEPT_SCANS: usize = 4;
 
 pub struct ScanStore {
     active: Mutex<Option<ActiveScan>>,
-    latest: Mutex<Option<ScanSession>>,
+    latest: Mutex<Vec<ScanSession>>,
     next_id: AtomicU64,
 }
 
@@ -26,7 +31,7 @@ impl Default for ScanStore {
     fn default() -> Self {
         Self {
             active: Mutex::new(None),
-            latest: Mutex::new(None),
+            latest: Mutex::new(Vec::new()),
             next_id: AtomicU64::new(1),
         }
     }
@@ -66,7 +71,12 @@ impl ScanStore {
         if active.as_ref().is_some_and(|scan| scan.id == session.id) {
             *active = None;
         }
-        *self.latest.lock().map_err(|error| error.to_string())? = Some(session);
+        let mut latest = self.latest.lock().map_err(|error| error.to_string())?;
+        latest.retain(|scan| scan.id != session.id);
+        latest.push(session);
+        if latest.len() > KEPT_SCANS {
+            latest.remove(0);
+        }
         Ok(())
     }
 
@@ -74,8 +84,8 @@ impl ScanStore {
         self.latest
             .lock()
             .map_err(|error| error.to_string())?
-            .as_ref()
-            .filter(|scan| scan.id == scan_id)
+            .iter()
+            .find(|scan| scan.id == scan_id)
             .cloned()
             .ok_or_else(|| "unknown scan".to_string())
     }
@@ -86,6 +96,9 @@ pub struct AppState {
     pub container: Arc<dyn ContainerProvider>,
     pub cleaner: Mutex<Cleaner>,
     pub scans: Arc<ScanStore>,
+    pub tools: Arc<dyn ToolProvider>,
+    pub launch: Arc<dyn LaunchControl>,
+    pub audit: AuditLog,
     pub settings_path: std::path::PathBuf,
     pub settings_lock: Mutex<()>,
 }
@@ -95,9 +108,20 @@ impl AppState {
         let platform: Arc<dyn Platform> = Arc::from(platform);
         let container: Arc<dyn ContainerProvider> = Arc::new(DockerProvider);
         let app_data = platform.data_dir().join("TTops");
-        let audit = AuditLog::new(app_data.join("audit.jsonl"));
+        let audit_path = app_data.join("audit.jsonl");
+        let tools: Arc<dyn ToolProvider> = Arc::new(BrewProvider::detect());
         Self {
-            cleaner: Mutex::new(Cleaner::new(platform.clone(), container.clone(), audit)),
+            cleaner: Mutex::new(
+                Cleaner::new(
+                    platform.clone(),
+                    container.clone(),
+                    AuditLog::new(&audit_path),
+                )
+                .with_tools(tools.clone()),
+            ),
+            tools,
+            launch: Arc::new(Launchctl),
+            audit: AuditLog::new(audit_path),
             platform,
             container,
             scans: Arc::new(ScanStore::default()),

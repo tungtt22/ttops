@@ -18,6 +18,7 @@ fn run(id: &str, started_at: u64) -> CleanupRun {
             target: Target::ContainerBuildCache,
             size_bytes: 12,
             action: Action::Trash,
+            details: vec![],
         }],
         results: vec![],
         freed_bytes: 0,

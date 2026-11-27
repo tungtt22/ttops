@@ -12,12 +12,35 @@ pub struct ContainerImage {
     pub locally_built: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoppedContainer {
+    pub id: String,
+    pub name: String,
+    pub size_bytes: u64,
+}
+
 pub trait ContainerProvider: Send + Sync {
     fn available(&self) -> bool;
     fn build_cache_bytes(&self) -> Result<u64, String>;
     fn unused_images(&self) -> Result<Vec<ContainerImage>, String>;
     fn prune_build_cache(&self) -> Result<(), String>;
     fn remove_image(&self, id: &str) -> Result<(), String>;
+    /// Untagged images left behind by rebuilds.
+    fn dangling_images(&self) -> Result<Vec<ContainerImage>, String> {
+        Ok(Vec::new())
+    }
+    /// Containers that exist but are not running.
+    fn stopped_containers(&self) -> Result<Vec<StoppedContainer>, String> {
+        Ok(Vec::new())
+    }
+    /// Removes a stopped container; never forces removal of a running one.
+    fn remove_container(&self, _id: &str) -> Result<(), String> {
+        Err("container removal unavailable".into())
+    }
+    /// Volumes not referenced by any container (listed for review only).
+    fn unused_volumes(&self) -> Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
 }
 
 #[derive(Default)]
@@ -97,8 +120,63 @@ impl ContainerProvider for DockerProvider {
     fn remove_image(&self, id: &str) -> Result<(), String> {
         self.output(&["rmi", id]).map(|_| ())
     }
+    fn dangling_images(&self) -> Result<Vec<ContainerImage>, String> {
+        let rows = self.output(&["images", "-f", "dangling=true", "--format", "{{json .}}"])?;
+        Ok(json_rows(&rows)
+            .map(|row| ContainerImage {
+                id: field(&row, "ID"),
+                repo_tag: "<none>:<none>".into(),
+                size_bytes: parse_size(&field(&row, "Size")),
+                used: false,
+                locally_built: true,
+            })
+            .collect())
+    }
+    fn stopped_containers(&self) -> Result<Vec<StoppedContainer>, String> {
+        let rows = self.output(&[
+            "ps",
+            "-a",
+            "-s",
+            "--filter",
+            "status=exited",
+            "--filter",
+            "status=created",
+            "--format",
+            "{{json .}}",
+        ])?;
+        Ok(json_rows(&rows)
+            .map(|row| StoppedContainer {
+                id: field(&row, "ID"),
+                name: field(&row, "Names"),
+                // "12kB (virtual 1.2GB)": the writable layer is what removal frees.
+                size_bytes: parse_size(field(&row, "Size").split(' ').next().unwrap_or("0B")),
+            })
+            .collect())
+    }
+    fn remove_container(&self, id: &str) -> Result<(), String> {
+        self.output(&["rm", id]).map(|_| ())
+    }
+    fn unused_volumes(&self) -> Result<Vec<String>, String> {
+        let names = self.output(&["volume", "ls", "-q", "-f", "dangling=true"])?;
+        Ok(names
+            .lines()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map(str::to_owned)
+            .collect())
+    }
 }
-fn parse_size(value: &str) -> u64 {
+fn json_rows(text: &str) -> impl Iterator<Item = serde_json::Value> + '_ {
+    text.lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+}
+fn field(row: &serde_json::Value, key: &str) -> String {
+    row.get(key)
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_owned()
+}
+pub(crate) fn parse_size(value: &str) -> u64 {
     let normalized = value.replace(',', "").trim().to_ascii_uppercase();
     let split = normalized
         .find(|c: char| c.is_ascii_alphabetic())

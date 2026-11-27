@@ -99,6 +99,17 @@ fn macos_catalog_expands_platform_locations_and_scans_seeded_cache_and_container
         "local-model-stores",
         "chat-app-media",
         "large-files",
+        "user-logs",
+        "xcode-derived-data",
+        "yarn-cache",
+        "pnpm-store",
+        "go-download-cache",
+        "brew-cleanup",
+        "brew-autoremove",
+        "container-dangling-images",
+        "container-stopped",
+        "container-volumes",
+        "duplicate-files",
     ] {
         assert!(ids.contains(&required), "missing {required}");
     }
@@ -152,4 +163,28 @@ fn macos_catalog_expands_platform_locations_and_scans_seeded_cache_and_container
             .iter()
             .any(|rule| rule.kind == RuleKind::ContainerImages)
     );
+}
+
+#[test]
+fn external_tool_rules_must_be_permanent_and_not_preselected() {
+    let preselected = r#"
+[[rules]]
+id = "brew-cleanup"
+name = "brew"
+category = "A"
+kind = "brewCleanup"
+regenerable = true
+preselect = true
+permanentOnly = true
+"#;
+    assert!(ttops_core::rules::load_catalog(preselected).is_err());
+    let trash = r#"
+[[rules]]
+id = "brew-cleanup"
+name = "brew"
+category = "A"
+kind = "brewCleanup"
+regenerable = true
+"#;
+    assert!(ttops_core::rules::load_catalog(trash).is_err());
 }

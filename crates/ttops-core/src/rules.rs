@@ -101,6 +101,19 @@ fn validate(rules: &[Rule]) -> Result<(), RuleError> {
                 rule.id
             )));
         }
+        let external = matches!(
+            rule.kind,
+            RuleKind::BrewCleanup
+                | RuleKind::BrewAutoremove
+                | RuleKind::ContainerDanglingImages
+                | RuleKind::ContainerStopped
+        );
+        if external && (rule.preselect || !rule.permanent_only) {
+            return Err(RuleError::Invalid(format!(
+                "external tool rules must be permanentOnly and not preselected: {}",
+                rule.id
+            )));
+        }
         if rule.kind == RuleKind::ProjectOutputs && rule.outputs.is_empty() {
             return Err(RuleError::Invalid(format!("outputs required: {}", rule.id)));
         }
