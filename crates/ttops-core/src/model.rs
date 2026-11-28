@@ -39,6 +39,18 @@ pub enum RuleKind {
     ContainerImages,
     ProjectOutputs,
     LargeFiles,
+    /// Identical files under the user's review roots.
+    DuplicateFiles,
+    /// `brew cleanup` (old versions and downloads), previewed by dry run.
+    BrewCleanup,
+    /// `brew autoremove` (formulae no longer needed), previewed by dry run.
+    BrewAutoremove,
+    /// Untagged container images.
+    ContainerDanglingImages,
+    /// Containers that are not running.
+    ContainerStopped,
+    /// Unused container volumes (review only).
+    ContainerVolumes,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +102,31 @@ pub enum Target {
     },
     ContainerBuildCache,
     RecycleBin,
+    /// An application bundle and its leftovers (App Uninstaller only; always Trash).
+    App {
+        path: PathBuf,
+        bundle_id: String,
+        executable: String,
+        leftovers: Vec<PathBuf>,
+    },
+    /// A command run by an external tool; always permanent.
+    Tool {
+        command: ToolCommand,
+    },
+    /// A stopped container.
+    Container {
+        id: String,
+        name: String,
+    },
+    /// Nothing to execute (review-only entries such as container volumes).
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ToolCommand {
+    BrewCleanup,
+    BrewAutoremove,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,6 +145,15 @@ pub struct ScanItem {
     pub preselected: bool,
     pub permanent_only: bool,
     pub guidance: Option<String>,
+    /// Items sharing a group id are identical files.
+    #[serde(default)]
+    pub duplicate_group: Option<String>,
+    /// Days since the file was last read or written.
+    #[serde(default)]
+    pub idle_days: Option<u32>,
+    /// Extra lines shown in the preview (for example uninstall leftovers or formulae).
+    #[serde(default)]
+    pub details: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,6 +200,8 @@ pub struct PreviewItem {
     pub target: Target,
     pub size_bytes: u64,
     pub action: Action,
+    #[serde(default)]
+    pub details: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,6 +210,10 @@ pub enum RefusalReason {
     Protected,
     NotSelectable,
     Unknown,
+    /// Every copy of a duplicate group was requested; one is kept.
+    KeepOneCopy,
+    /// The application is running or is an Apple system app.
+    AppNotRemovable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -255,6 +307,16 @@ pub struct Settings {
     pub project_roots: Vec<PathBuf>,
     #[serde(default = "default_threshold")]
     pub large_file_threshold_bytes: u64,
+    /// Folders searched for duplicate files.
+    #[serde(default)]
+    pub review_roots: Vec<PathBuf>,
+    /// Smallest file considered for duplicate detection.
+    #[serde(default = "default_duplicate_min")]
+    pub duplicate_min_bytes: u64,
+}
+
+fn default_duplicate_min() -> u64 {
+    1 << 20
 }
 
 fn default_threshold() -> u64 {
@@ -266,6 +328,8 @@ impl Default for Settings {
         Self {
             project_roots: Vec::new(),
             large_file_threshold_bytes: default_threshold(),
+            review_roots: Vec::new(),
+            duplicate_min_bytes: default_duplicate_min(),
         }
     }
 }
@@ -277,4 +341,34 @@ pub struct VolumeSummary {
     pub total_bytes: u64,
     pub used_bytes: u64,
     pub free_bytes: u64,
+}
+
+/// Where a startup item is registered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StartupScope {
+    /// The current user's LaunchAgents; the only scope TTops may toggle.
+    UserAgent,
+    SystemAgent,
+    SystemDaemon,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupItem {
+    pub label: String,
+    pub plist: PathBuf,
+    pub program: Option<String>,
+    pub scope: StartupScope,
+    pub enabled: bool,
+    pub editable: bool,
+}
+
+/// Metadata read from an application bundle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BundleInfo {
+    pub bundle_id: String,
+    pub name: String,
+    pub executable: String,
 }

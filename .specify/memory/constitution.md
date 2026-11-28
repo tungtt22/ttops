@@ -1,5 +1,12 @@
 <!--
-Sync Impact Report
+Sync Impact Report (1.2.0, 2026-11-27)
+- Version change: 1.1.0 → 1.2.0 (MINOR: materially expanded guidance)
+- Modified principles: I. Safety-First Cleanup — added a narrow, owner-approved App Uninstaller
+  exception for application bundles; added rules for external tool cleanups (Homebrew, Docker)
+  and for reversible startup-item toggles.
+- Deferred TODOs: none
+
+Previous report (1.1.0):
 - Version change: 1.0.0 → 1.1.0 (MINOR: materially expanded guidance)
 - Modified principles: V. Lightweight and Private → V. Lightweight, Private, and Public-Safe
   (no hard-coded personal or secret values; runtime-resolved locations)
@@ -28,6 +35,18 @@ TTops deletes user data, so every destructive path is designed to fail safe.
   SSH/GPG keys, cloud CLI credential files) regardless of how the request was produced.
 - User documents (Desktop, Documents, Pictures, Downloads, and equivalents) MUST NOT be
   selected for cleanup by default; they are only cleaned when the user selects individual items.
+- App Uninstaller exception (owner-approved 2026-11-27): only the App Uninstaller feature may
+  remove an application bundle, and only when the bundle is a direct child of a platform-declared
+  applications folder, is not an Apple system app, is not running, and was selected individually.
+  An uninstall MUST always move the bundle and its leftovers to the Trash (never permanent), and
+  every leftover MUST still pass the protected-path guard. Every other feature MUST keep refusing
+  application bundles.
+- External tool cleanups (for example `brew cleanup`, `brew autoremove`, container prune) bypass
+  the Trash. They MUST show a dry-run preview, MUST be treated as permanent (irreversible
+  acknowledgement required, never preselected), and MUST be audited.
+- Reversible system-state changes (for example disabling a user startup item) MUST be limited to
+  the current user's scope, require explicit confirmation, and be audited; system-scope items are
+  read-only.
 - Every executed cleanup MUST append an audit record (timestamp, items, sizes, action, outcome)
   to a local audit log.
 - A cleanup rule MUST declare whether its target is regenerable (cache, build output) or user
@@ -109,4 +128,4 @@ confirmation, and preserving locally built artefacts prevent irreversible loss.
   and records the change in the Sync Impact Report.
 - Reviewers MUST verify Principle I and IV compliance on every change touching cleanup code.
 
-**Version**: 1.1.0 | **Ratified**: 2026-11-22 | **Last Amended**: 2026-11-22
+**Version**: 1.2.0 | **Ratified**: 2026-11-22 | **Last Amended**: 2026-11-27

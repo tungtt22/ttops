@@ -34,3 +34,9 @@ name = "Large files"
 category = "C"
 kind = "largeFiles"
 paths = ["~"]
+
+[[rules]]
+id = "duplicate-files"
+name = "Duplicate files"
+category = "C"
+kind = "duplicateFiles"

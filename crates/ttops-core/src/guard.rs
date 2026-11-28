@@ -58,6 +58,46 @@ impl Guard {
     }
 }
 
+impl Guard {
+    /// The App Uninstaller exception (constitution 1.2.0): accepts only a real
+    /// (non-symlink) `.app` directory that is a direct child of an applications
+    /// folder. Every other protected root and component rule still applies.
+    pub fn check_app_bundle(&self, path: &Path, app_dirs: &[PathBuf]) -> Result<(), Protected> {
+        let refuse = || Err(Protected(path.to_path_buf()));
+        let Ok(metadata) = std::fs::symlink_metadata(path) else {
+            return refuse();
+        };
+        if !metadata.is_dir()
+            || !path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
+        {
+            return refuse();
+        }
+        let checked = normalize_existing_or_lexical(path);
+        let Some(parent) = checked.parent() else {
+            return refuse();
+        };
+        let app_dirs: Vec<PathBuf> = app_dirs
+            .iter()
+            .map(|dir| normalize_existing_or_lexical(dir))
+            .collect();
+        if !app_dirs.iter().any(|dir| same_path(parent, dir)) {
+            return refuse();
+        }
+        let other_roots_overlap = self
+            .protected_roots
+            .iter()
+            .filter(|root| !app_dirs.iter().any(|dir| same_path(root, dir)))
+            .any(|root| overlaps(&checked, root));
+        let parent_components_protected = parent.components().any(protected_component);
+        if other_roots_overlap || parent_components_protected || same_path(&checked, &self.home) {
+            return refuse();
+        }
+        Ok(())
+    }
+}
+
 fn normalize_existing_or_lexical(path: &Path) -> PathBuf {
     if let Ok(canonical) = std::fs::canonicalize(path) {
         return canonical;

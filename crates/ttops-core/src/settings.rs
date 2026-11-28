@@ -10,26 +10,37 @@ use crate::model::Settings;
 /// Smallest accepted large-file threshold (1 MiB).
 pub const MIN_THRESHOLD_BYTES: u64 = 1 << 20;
 
-/// Validates user-supplied settings: every project root must be an existing,
-/// non-protected directory; duplicates are dropped.
+/// Validates user-supplied settings: every project and review root must be an
+/// existing, non-protected, absolute directory; repeated roots are dropped.
 pub fn validate(mut settings: Settings, guard: &Guard) -> Result<Settings, String> {
     if settings.large_file_threshold_bytes < MIN_THRESHOLD_BYTES {
         return Err("largeFileThresholdTooSmall".into());
     }
-    let mut roots = Vec::new();
-    for root in settings.project_roots {
+    if settings.duplicate_min_bytes == 0 {
+        return Err("duplicateMinBytesTooSmall".into());
+    }
+    settings.project_roots = validate_roots(settings.project_roots, guard)?;
+    settings.review_roots = validate_roots(settings.review_roots, guard)?;
+    Ok(settings)
+}
+
+fn validate_roots(
+    roots: Vec<std::path::PathBuf>,
+    guard: &Guard,
+) -> Result<Vec<std::path::PathBuf>, String> {
+    let mut valid = Vec::new();
+    for root in roots {
         if !root.is_absolute() || !root.is_dir() {
             return Err(format!("notADirectory: {}", root.display()));
         }
         guard
             .check(&root)
             .map_err(|_| format!("protected: {}", root.display()))?;
-        if !roots.contains(&root) {
-            roots.push(root);
+        if !valid.contains(&root) {
+            valid.push(root);
         }
     }
-    settings.project_roots = roots;
-    Ok(settings)
+    Ok(valid)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -80,6 +91,7 @@ mod tests {
         let settings = Settings {
             project_roots: vec![temporary.path().join("project")],
             large_file_threshold_bytes: 42,
+            ..Settings::default()
         };
         save(&path, &settings).unwrap();
         assert_eq!(load(&path).unwrap(), settings);

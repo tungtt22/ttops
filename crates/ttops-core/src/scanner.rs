@@ -14,6 +14,7 @@ use crate::model::{
 };
 use crate::platform::Platform;
 use crate::rules::expand_paths;
+use crate::tools::{NoTools, ToolProvider};
 
 static NEXT_SCAN: AtomicU64 = AtomicU64::new(1);
 pub trait ProgressSink: Send + Sync {
@@ -64,14 +65,30 @@ pub fn scan_with_id(
     )
 }
 
-/// Scans every rule. `largeFiles` rules run last so they can skip paths that
-/// other rules already claimed and sizes are never counted twice.
 pub fn scan_with_settings(
     id: String,
     platform: &dyn Platform,
     rules: &[Rule],
     settings: &Settings,
     container: &dyn ContainerProvider,
+    cancel: &AtomicBool,
+    progress: &dyn ProgressSink,
+) -> ScanSession {
+    scan_with_tools(
+        id, platform, rules, settings, container, &NoTools, cancel, progress,
+    )
+}
+
+/// Scans every rule. `largeFiles` rules run last so they can skip paths that
+/// other rules already claimed and sizes are never counted twice.
+#[allow(clippy::too_many_arguments)]
+pub fn scan_with_tools(
+    id: String,
+    platform: &dyn Platform,
+    rules: &[Rule],
+    settings: &Settings,
+    container: &dyn ContainerProvider,
+    tools: &dyn ToolProvider,
     cancel: &AtomicBool,
     progress: &dyn ProgressSink,
 ) -> ScanSession {
@@ -146,10 +163,88 @@ pub fn scan_with_settings(
                     scan_project_outputs(rule, root, &guard, &mut session, cancel);
                 }
             }
+            RuleKind::DuplicateFiles => {
+                crate::duplicates::scan_duplicates(
+                    rule,
+                    platform,
+                    &settings.review_roots,
+                    settings.duplicate_min_bytes,
+                    &guard,
+                    &mut session,
+                    cancel,
+                );
+            }
+            RuleKind::BrewCleanup if tools.brew_available() => {
+                if let Ok((bytes, lines)) = tools.brew_cleanup_preview()
+                    && (bytes > 0 || !lines.is_empty())
+                {
+                    let mut found = external(
+                        rule,
+                        Target::Tool {
+                            command: crate::model::ToolCommand::BrewCleanup,
+                        },
+                        rule.name.clone(),
+                        bytes,
+                    );
+                    found.details = lines;
+                    session.items.push(found);
+                }
+            }
+            RuleKind::BrewAutoremove if tools.brew_available() => {
+                if let Ok(formulae) = tools.brew_autoremove_preview()
+                    && !formulae.is_empty()
+                {
+                    let mut found = external(
+                        rule,
+                        Target::Tool {
+                            command: crate::model::ToolCommand::BrewAutoremove,
+                        },
+                        format!("{} ({})", rule.name, formulae.len()),
+                        0,
+                    );
+                    found.details = formulae;
+                    session.items.push(found);
+                }
+            }
+            RuleKind::ContainerDanglingImages if session.container_available => {
+                for image in container.dangling_images().unwrap_or_default() {
+                    session.items.push(external(
+                        rule,
+                        Target::ContainerImage {
+                            id: image.id.clone(),
+                            repo_tag: image.repo_tag,
+                        },
+                        format!("Untagged image {}", image.id),
+                        image.size_bytes,
+                    ));
+                }
+            }
+            RuleKind::ContainerStopped if session.container_available => {
+                for stopped in container.stopped_containers().unwrap_or_default() {
+                    session.items.push(external(
+                        rule,
+                        Target::Container {
+                            id: stopped.id,
+                            name: stopped.name.clone(),
+                        },
+                        format!("Stopped container {}", stopped.name),
+                        stopped.size_bytes,
+                    ));
+                }
+            }
+            RuleKind::ContainerVolumes if session.container_available => {
+                for volume in container.unused_volumes().unwrap_or_default() {
+                    let mut found = external(rule, Target::None, volume.clone(), 0);
+                    found.id = format!("{}:{volume}", rule.id);
+                    found.selectable = false;
+                    session.items.push(found);
+                }
+            }
             RuleKind::LargeFiles => {
                 for root in expand_paths(rule, platform) {
                     scan_large_files(
                         rule,
+                        platform,
                         &root,
                         settings.large_file_threshold_bytes,
                         &guard,
@@ -327,6 +422,7 @@ fn project_age_days(rule: &Rule, project: &Path) -> Option<u32> {
 /// the guard does not protect. Unreadable folders are skipped silently.
 fn scan_large_files(
     rule: &Rule,
+    platform: &dyn Platform,
     root: &Path,
     threshold: u64,
     guard: &Guard,
@@ -341,7 +437,7 @@ fn scan_large_files(
             _ => None,
         })
         .collect();
-    let completed = walk_unprotected(root, guard, &claimed, cancel, |entry| {
+    let completed = walk_unprotected(platform, root, guard, &claimed, cancel, |entry| {
         let path = entry.path();
         if !entry.file_type().is_file() {
             return;
@@ -352,7 +448,7 @@ fn scan_large_files(
         if metadata.len() < threshold || guard.check(path).is_err() {
             return;
         }
-        session.items.push(item(
+        let mut found = item(
             rule,
             Target::Path {
                 path: path.to_path_buf(),
@@ -361,7 +457,9 @@ fn scan_large_files(
             path.display().to_string(),
             metadata.len(),
             last_modified_ms(path).ok().flatten(),
-        ));
+        );
+        found.idle_days = idle_days(&metadata);
+        session.items.push(found);
     });
     if !completed {
         session.status = ScanStatus::Cancelled;
@@ -370,8 +468,11 @@ fn scan_large_files(
 
 /// Walks `root` without following links and calls `visit` for every entry,
 /// never descending into claimed paths or guard-protected subtrees (for example
-/// `~/Library` or a credentials folder). Returns false when cancelled.
+/// `~/Library` or a credentials folder) and never opening other apps'
+/// privacy-guarded containers, which block on a consent prompt. Returns false
+/// when cancelled.
 fn walk_unprotected(
+    platform: &dyn Platform,
     root: &Path,
     guard: &Guard,
     claimed: &[PathBuf],
@@ -388,6 +489,7 @@ fn walk_unprotected(
         };
         let path = entry.path();
         let skip = claimed.iter().any(|claim| path.starts_with(claim))
+            || (entry.file_type().is_dir() && crate::apps::is_privacy_guarded(platform, path))
             || (entry.depth() > 0 && entry.file_type().is_dir() && guard.protects_subtree(path));
         if skip {
             if entry.file_type().is_dir() {
@@ -400,7 +502,27 @@ fn walk_unprotected(
     true
 }
 
-fn item(
+/// Days since the newest of access and modification time.
+pub(crate) fn idle_days(metadata: &std::fs::Metadata) -> Option<u32> {
+    let last = [metadata.accessed().ok(), metadata.modified().ok()]
+        .into_iter()
+        .flatten()
+        .max()?;
+    let elapsed = std::time::SystemTime::now()
+        .duration_since(last)
+        .unwrap_or_default();
+    Some((elapsed.as_secs() / 86_400) as u32)
+}
+
+/// Items executed by an external CLI: never preselected, always permanent.
+fn external(rule: &Rule, target: Target, label: String, size_bytes: u64) -> ScanItem {
+    let mut found = item(rule, target, label, size_bytes, None);
+    found.preselected = false;
+    found.permanent_only = true;
+    found
+}
+
+pub(crate) fn item(
     rule: &Rule,
     target: Target,
     label: String,
@@ -415,6 +537,10 @@ fn item(
             Target::ContainerImage { id, .. } => id.clone(),
             Target::ContainerBuildCache => "build-cache".into(),
             Target::RecycleBin => "recycle-bin".into(),
+            Target::App { path, .. } => path.to_string_lossy().to_string(),
+            Target::Tool { command } => format!("{command:?}"),
+            Target::Container { id, .. } => id.clone(),
+            Target::None => "none".into(),
         }
     );
     ScanItem {
@@ -431,6 +557,9 @@ fn item(
         preselected: rule.category == Category::A && rule.preselect && !rule.review_only,
         permanent_only: rule.permanent_only,
         guidance: rule.guidance.clone(),
+        duplicate_group: None,
+        idle_days: None,
+        details: Vec::new(),
     }
 }
 
@@ -462,6 +591,7 @@ mod walk_tests {
 
         let mut visited = Vec::new();
         let done = walk_unprotected(
+            &platform,
             &home,
             &guard,
             &[home.join("claimed")],

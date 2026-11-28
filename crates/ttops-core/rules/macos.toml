@@ -114,6 +114,145 @@ regenerable = true
 preselect = false
 permanentOnly = true
 
+# Extended system junk (feature 002).
+[[rules]]
+id = "user-logs"
+name = "User logs"
+category = "A"
+kind = "dirContents"
+paths = ["~/Library/Logs"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "xcode-derived-data"
+name = "Xcode DerivedData"
+category = "A"
+kind = "dirContents"
+paths = ["~/Library/Developer/Xcode/DerivedData"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "xcode-device-support"
+name = "Xcode device support files"
+category = "A"
+kind = "children"
+paths = ["~/Library/Developer/Xcode/iOS DeviceSupport", "~/Library/Developer/Xcode/watchOS DeviceSupport"]
+regenerable = true
+
+# Programming-language package caches (feature 002).
+[[rules]]
+id = "yarn-cache"
+name = "Yarn cache"
+category = "A"
+kind = "dirContents"
+paths = ["{cache}/Yarn"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "pnpm-store"
+name = "pnpm store"
+category = "A"
+kind = "dirContents"
+paths = ["~/Library/pnpm/store"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "bun-cache"
+name = "Bun cache"
+category = "A"
+kind = "dirContents"
+paths = ["~/.bun/install/cache"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "go-download-cache"
+name = "Go module download cache"
+category = "A"
+kind = "dirContents"
+paths = ["~/go/pkg/mod/cache/download"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "cocoapods-cache"
+name = "CocoaPods cache"
+category = "A"
+kind = "dirContents"
+paths = ["{cache}/CocoaPods"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "composer-cache"
+name = "Composer cache"
+category = "A"
+kind = "dirContents"
+paths = ["{cache}/composer"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "swiftpm-cache"
+name = "Swift Package Manager cache"
+category = "A"
+kind = "dirContents"
+paths = ["{cache}/org.swift.swiftpm"]
+regenerable = true
+preselect = true
+
+[[rules]]
+id = "nuget-packages"
+name = "NuGet packages"
+category = "A"
+kind = "dirContents"
+paths = ["~/.nuget/packages"]
+regenerable = true
+
+# External tool cleanups: permanent, never preselected (constitution 1.2.0).
+[[rules]]
+id = "brew-cleanup"
+name = "Homebrew cleanup (old versions and downloads)"
+category = "A"
+kind = "brewCleanup"
+regenerable = true
+permanentOnly = true
+
+[[rules]]
+id = "brew-autoremove"
+name = "Unused Homebrew formulae"
+category = "B"
+kind = "brewAutoremove"
+regenerable = true
+permanentOnly = true
+
+[[rules]]
+id = "container-dangling-images"
+name = "Untagged container images"
+category = "B"
+kind = "containerDanglingImages"
+regenerable = true
+permanentOnly = true
+
+[[rules]]
+id = "container-stopped"
+name = "Stopped containers"
+category = "C"
+kind = "containerStopped"
+permanentOnly = true
+
+[[rules]]
+id = "container-volumes"
+name = "Unused container volumes"
+category = "C"
+kind = "containerVolumes"
+reviewOnly = true
+guidance = "Volumes may hold data. Review, then remove with: docker volume rm <name>"
+
 # Category B — developer build outputs under user-chosen project roots.
 [[rules]]
 id = "project-build-outputs"
@@ -160,3 +299,23 @@ name = "Large files"
 category = "C"
 kind = "largeFiles"
 paths = ["~"]
+
+[[rules]]
+id = "xcode-archives"
+name = "Xcode archives"
+category = "C"
+kind = "children"
+paths = ["~/Library/Developer/Xcode/Archives"]
+
+[[rules]]
+id = "ios-backups"
+name = "iPhone and iPad backups"
+category = "C"
+kind = "children"
+paths = ["~/Library/Application Support/MobileSync/Backup"]
+
+[[rules]]
+id = "duplicate-files"
+name = "Duplicate files"
+category = "C"
+kind = "duplicateFiles"

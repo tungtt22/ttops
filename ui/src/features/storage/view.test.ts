@@ -9,7 +9,7 @@ import { render } from "./view";
 
 const item = (id: string, category: ScanItem["category"]): ScanItem => ({
   id, ruleId: "r", category, label: id, sizeBytes: 1,
-  selectable: true, preselected: false, permanentOnly: false,
+  selectable: true, preselected: false, permanentOnly: false, details: [],
 });
 
 function mount(items: ScanItem[]) {

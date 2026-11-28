@@ -220,6 +220,7 @@ fn settings_validation_rejects_protected_missing_and_file_roots() {
         Settings {
             project_roots: vec![code.clone(), code.clone()],
             large_file_threshold_bytes: 1 << 30,
+            ..Settings::default()
         },
         &guard,
     )

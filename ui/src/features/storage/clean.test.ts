@@ -4,43 +4,50 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
-import type { ScanItem } from "../../api";
+import type { Preview, ScanItem } from "../../api";
 import { buildCleanupDialog } from "./clean";
 
-const item = (label: string, permanentOnly = false): ScanItem => ({
-  id: label, ruleId: "rule", category: "A", label, sizeBytes: 10,
-  selectable: true, preselected: true, permanentOnly,
+const PAYLOAD = `<img src=x onerror="window.__pwned=1"><b>bold</b>`;
+
+const scanItem = (id: string, label: string): ScanItem => ({ id, label } as ScanItem);
+
+const preview = (overrides: Partial<Preview> = {}): Preview => ({
+  id: "p", totalBytes: 10, requiresIrreversibleAck: false,
+  items: [{ itemId: "a", label: PAYLOAD, sizeBytes: 10, action: "Trash", details: [PAYLOAD] }],
+  refused: [{ itemId: "b", reason: PAYLOAD }],
+  ...overrides,
 });
 
-describe("cleanup preview dialog", () => {
-  it("renders markup-bearing filesystem labels literally", () => {
-    const payload = `<img src=x onerror="window.__pwned=1"><b>bold</b>`;
-    const { dialog } = buildCleanupDialog([item(payload)]);
-    document.body.append(dialog);
+function mount(parts: { nodes: Node[] }): HTMLDialogElement {
+  const dialog = document.createElement("dialog");
+  dialog.replaceChildren(...parts.nodes);
+  document.body.append(dialog);
+  return dialog;
+}
 
-    const entries = dialog.querySelectorAll("li");
-    expect(entries).toHaveLength(1);
-    expect(entries[0].textContent).toBe(payload);
-    expect(entries[0].children).toHaveLength(0);
+describe("cleanup preview dialog", () => {
+  it("renders markup-bearing labels, details and refusal reasons literally", () => {
+    const dialog = mount(buildCleanupDialog(preview(), [scanItem("b", PAYLOAD)], true, false));
     expect(dialog.querySelector("img")).toBeNull();
     expect(dialog.querySelector("b")).toBeNull();
     expect(dialog.querySelector("[onerror]")).toBeNull();
+    expect(dialog.textContent).toContain(PAYLOAD);
+    expect(dialog.querySelector("code")!.textContent).toBe(PAYLOAD);
     expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
     dialog.remove();
   });
 
   it("keeps the confirmation controls", () => {
-    const normal = buildCleanupDialog([item("cache-a"), item("cache-b")]);
-    expect(normal.dialog.querySelectorAll("li")).toHaveLength(2);
-    expect(normal.permanentInput.checked).toBe(false);
-    expect(normal.dialog.querySelector<HTMLElement>("#ack")!.hidden).toBe(true);
-    normal.permanentInput.checked = true;
-    normal.permanentInput.dispatchEvent(new Event("change"));
-    expect(normal.dialog.querySelector<HTMLElement>("#ack")!.hidden).toBe(false);
-    expect(Array.from(normal.dialog.querySelectorAll("button")).map((b) => b.value)).toEqual(["cancel", "confirm"]);
+    const safe = preview({ items: [{ itemId: "a", label: "cache", sizeBytes: 1, action: "Permanent", details: [] }], refused: [], requiresIrreversibleAck: true });
+    const parts = buildCleanupDialog(safe, [], true, true);
+    const dialog = mount(parts);
+    expect(parts.permanentInput!.checked).toBe(true);
+    expect(dialog.querySelector<HTMLElement>("#ack")!.hidden).toBe(false);
+    expect(Array.from(dialog.querySelectorAll("button")).map((b) => b.value)).toEqual(["cancel", "confirm"]);
 
-    const forced = buildCleanupDialog([item("docker", true)]);
-    expect(forced.permanentInput.checked && forced.permanentInput.disabled).toBe(true);
-    expect(forced.dialog.querySelector<HTMLElement>("#ack")!.hidden).toBe(false);
+    const none = buildCleanupDialog(preview({ items: [], refused: [] }), [], false, false);
+    expect(none.permanentInput).toBeUndefined();
+    const confirm = mount(none).querySelector<HTMLButtonElement>('button[value="confirm"]')!;
+    expect(confirm.disabled).toBe(true);
   });
 });

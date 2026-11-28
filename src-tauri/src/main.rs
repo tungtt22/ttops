@@ -11,6 +11,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_volume_summary,
             commands::start_scan,
+            commands::start_app_scan,
+            commands::list_startup_items,
+            commands::set_startup_item_enabled,
             commands::get_settings,
             commands::set_settings,
             commands::cancel_scan,
