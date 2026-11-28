@@ -6,7 +6,29 @@
 **Tests**: REQUIRED for core logic by Constitution Principle IV (test-first, temp dirs only).
 Write each test task before its implementation task and confirm it fails first.
 
-## Handoff status (2026-11-22)
+## Handoff status (2026-11-25)
+
+### v0.1.0 release-scope deviation and Tech Lead remediation
+
+The owner narrowed v0.1.0 to **macOS category A only**: developer build outputs (B), review-only
+large data (C), and Windows are deferred to v0.2.0. This preserves a small, safe, testable release
+after Tech Lead review found that the prior documentation claimed scope not present in the catalog.
+
+- Completed remediation: `0042226` guards every `dirContents` child immediately before deletion;
+  protected children are reported as `protected` and safe siblings continue. Temp-dir regression:
+  `cargo test -p ttops-core --test cleaner dir_contents_skips_a_protected_child_and_continues_with_safe_siblings`.
+- Completed remediation: `c78bd5d` adds the data-driven macOS category A catalog and a seeded
+  `TestPlatform` / fake-container catalog-and-scanner regression.
+- Completed remediation: `ed89aed` checks cancellation during tree traversal and includes the
+  representative large-tree two-second bound test.
+- Completed remediation: `2508c2b` emits `cleanup://progress`, returns cleanup results to the UI,
+  and renders freed bytes, succeeded items, and skipped reasons. Command event summary coverage is
+  in `src-tauri/src/commands.rs`.
+
+The remaining Phase 5–8 tasks are v0.2.0 scope unless explicitly reprioritized. Do not claim B/C,
+Windows, or persisted History as v0.1.0 functionality.
+
+### Earlier implementation handoff (2026-11-22)
 
 Scoping is complete. Implementation was started and then handed off; continue from here.
 
@@ -44,42 +66,42 @@ Scoping is complete. Implementation was started and then handed off; continue fr
 
 ## Phase 2: Foundational (blocks all stories)
 
-- [ ] T007 Define model types in `crates/ttops-core/src/model.rs` per data-model.md (Category, RuleKind, Rule, ScanItem, Target, ScanSession, CleanupPreview, CleanupRun, ItemResult, SkipReason, Settings; camelCase serde)
-- [ ] T008 Define `Platform` trait in `crates/ttops-core/src/platform/mod.rs` (home, cache/data/local_data dirs, trash dir, protected roots, rule catalog source, `move_to_trash`, `is_process_running`) plus `TestPlatform` rooted in a temp dir
-- [ ] T009 [P] Implement `crates/ttops-core/src/platform/macos.rs` and `crates/ttops-core/src/platform/windows.rs` (cfg-gated) with protected roots from research.md R6
-- [ ] T010 Write failing tests `crates/ttops-core/tests/guard.rs`: protected roots, inside-root paths, symlink into protected root, home itself, volume root, `.app` bundle, name patterns `*.keychain*`, `id_rsa*`, `id_ed25519*`, `*.pem`, `credentials`, `.env`
-- [ ] T011 Implement `crates/ttops-core/src/guard.rs` (canonicalise, prefix + pattern checks) until T010 passes
-- [ ] T012 [P] Write failing tests `crates/ttops-core/tests/fsutil.rs`: dir size without following symlinks, last-modified, missing path
-- [ ] T013 Implement `crates/ttops-core/src/fsutil.rs` until T012 passes
-- [ ] T014 Write failing tests `crates/ttops-core/tests/rules.rs`: token expansion, catalog validation ("`preselect` requires `regenerable`", "must be false for category B and C", "`guidance` required when `reviewOnly`", unique ids), both embedded catalogs load
-- [ ] T015 Implement `crates/ttops-core/src/rules.rs` and catalogs `crates/ttops-core/rules/macos.toml`, `crates/ttops-core/rules/windows.toml` until T014 passes
-- [ ] T016 [P] Write failing tests `crates/ttops-core/tests/audit.rs`: append/read runs, newest first, run without `runFinished` reads as `interrupted`
-- [ ] T017 Implement `crates/ttops-core/src/audit.rs` (JSONL, append + flush per record) until T016 passes
-- [ ] T018 [P] Implement `crates/ttops-core/src/settings.rs` (load/save JSON, default threshold 1 GiB) with tests in same file
-- [ ] T019 Implement app shell: `src-tauri/src/main.rs`, `src-tauri/src/state.rs`; UI `ui/src/main.ts`, `ui/src/api.ts`, `ui/src/styles.css`, `ui/src/features/registry.ts` (sidebar driven by registry)
+- [X] T007 Define model types in `crates/ttops-core/src/model.rs` per data-model.md (Category, RuleKind, Rule, ScanItem, Target, ScanSession, CleanupPreview, CleanupRun, ItemResult, SkipReason, Settings; camelCase serde)
+- [X] T008 Define `Platform` trait in `crates/ttops-core/src/platform/mod.rs` (home, cache/data/local_data dirs, trash dir, protected roots, rule catalog source, `move_to_trash`, `is_process_running`) plus `TestPlatform` rooted in a temp dir
+- [X] T009 [P] Implement `crates/ttops-core/src/platform/macos.rs` and `crates/ttops-core/src/platform/windows.rs` (cfg-gated) with protected roots from research.md R6
+- [X] T010 Write failing tests `crates/ttops-core/tests/guard.rs`: protected roots, inside-root paths, symlink into protected root, home itself, volume root, `.app` bundle, name patterns `*.keychain*`, `id_rsa*`, `id_ed25519*`, `*.pem`, `credentials`, `.env`
+- [X] T011 Implement `crates/ttops-core/src/guard.rs` (canonicalise, prefix + pattern checks) until T010 passes
+- [X] T012 [P] Write failing tests `crates/ttops-core/tests/fsutil.rs`: dir size without following symlinks, last-modified, missing path
+- [X] T013 Implement `crates/ttops-core/src/fsutil.rs` until T012 passes
+- [X] T014 Write failing tests `crates/ttops-core/tests/rules.rs`: token expansion, catalog validation ("`preselect` requires `regenerable`", "must be false for category B and C", "`guidance` required when `reviewOnly`", unique ids), both embedded catalogs load
+- [X] T015 Implement `crates/ttops-core/src/rules.rs` and catalogs `crates/ttops-core/rules/macos.toml`, `crates/ttops-core/rules/windows.toml` until T014 passes
+- [X] T016 [P] Write failing tests `crates/ttops-core/tests/audit.rs`: append/read runs, newest first, run without `runFinished` reads as `interrupted`
+- [X] T017 Implement `crates/ttops-core/src/audit.rs` (JSONL, append + flush per record) until T016 passes
+- [X] T018 [P] Implement `crates/ttops-core/src/settings.rs` (load/save JSON, default threshold 1 GiB) with tests in same file
+- [X] T019 Implement app shell: `src-tauri/src/main.rs`, `src-tauri/src/state.rs`; UI `ui/src/main.ts`, `ui/src/api.ts`, `ui/src/styles.css`, `ui/src/features/registry.ts` (sidebar driven by registry)
 
 ## Phase 3: User Story 1 — See disk usage and reclaimable space (P1) 🎯 MVP
 
-**Goal**: volume summary + read-only cancellable scan of category A (and C model stores) grouped with sizes.
+**Goal**: v0.1.0 volume summary + read-only cancellable scan of macOS category A grouped with sizes.
 **Independent Test**: seeded temp home → items/sizes match; before/after snapshot unchanged; cancel → `cancelled`.
 
-- [ ] T020 [P] [US1] Write failing tests `crates/ttops-core/tests/scanner.rs`: categories and sizes for seeded `dirContents`/`dir`/`glob` rules, read-only snapshot equality (SC-004), cancellation, unreadable dir listed in `unscanned`, missing paths silently skipped
-- [ ] T021 [P] [US1] Write failing tests for `ContainerProvider` with a fake provider in `crates/ttops-core/tests/container.rs`: build cache item, images used by containers excluded, images with empty `RepoDigests` excluded, provider unavailable ⇒ `containerAvailable = false`
-- [ ] T022 [US1] Implement `crates/ttops-core/src/container.rs` (trait + docker CLI impl per research R5) until T021 passes
-- [ ] T023 [US1] Implement `crates/ttops-core/src/scanner.rs` (rayon per rule, AtomicBool cancel, progress sink trait) until T020 passes
-- [ ] T024 [US1] Implement volume summary in `crates/ttops-core/src/platform/mod.rs` using sysinfo (longest mount prefix of home)
-- [ ] T025 [US1] Add commands `get_volume_summary`, `start_scan`, `cancel_scan`, `get_scan` and events `scan://progress`, `scan://finished` in `src-tauri/src/commands.rs`
-- [ ] T026 [US1] Build Storage view `ui/src/features/storage/view.ts`: volume bar, Scan/Cancel, grouped categories with sizes, incomplete label, unscanned list
+- [X] T020 [P] [US1] Write failing tests `crates/ttops-core/tests/scanner.rs`: categories and sizes for seeded `dirContents`/`dir`/`glob` rules, read-only snapshot equality (SC-004), cancellation, unreadable dir listed in `unscanned`, missing paths silently skipped
+- [X] T021 [P] [US1] Write failing tests for `ContainerProvider` with a fake provider in `crates/ttops-core/tests/container.rs`: build cache item, images used by containers excluded, images with empty `RepoDigests` excluded, provider unavailable ⇒ `containerAvailable = false`
+- [X] T022 [US1] Implement `crates/ttops-core/src/container.rs` (trait + docker CLI impl per research R5) until T021 passes
+- [X] T023 [US1] Implement `crates/ttops-core/src/scanner.rs` (rayon per rule, AtomicBool cancel, progress sink trait) until T020 passes
+- [X] T024 [US1] Implement volume summary in `crates/ttops-core/src/platform/mod.rs` using sysinfo (longest mount prefix of home)
+- [X] T025 [US1] Add commands `get_volume_summary`, `start_scan`, `cancel_scan`, `get_scan` and events `scan://progress`, `scan://finished` in `src-tauri/src/commands.rs`
+- [X] T026 [US1] Build Storage view `ui/src/features/storage/view.ts`: volume bar, Scan/Cancel, grouped categories with sizes, incomplete label, unscanned list
 
 ## Phase 4: User Story 2 — Clean selected items safely (P1) 🎯 MVP
 
-**Goal**: preview → confirm → Trash (default) / permanent (ack) with per-item results and audit.
+**Goal**: v0.1.0 category A preview → confirm → Trash (default) / permanent (ack) with per-item results and audit.
 **Independent Test**: seeded temp home → selected A items land in TestPlatform trash; reasons for skipped items.
 
-- [ ] T027 [P] [US2] Write failing tests `crates/ttops-core/tests/cleaner.rs`: preview has no side effects; unknown/reused preview rejected; permanent without ack changes nothing; trash mode moves items; vanished item ⇒ `noLongerExists`; protected path ⇒ `protected`; `processNames` running ⇒ `inUse`; `permanentOnly` forces permanent; container image removal via fake provider; audit records written
-- [ ] T028 [US2] Implement `crates/ttops-core/src/cleaner.rs` (preview store, re-stat + re-guard, error mapping per research R10, audit writes) until T027 passes
-- [ ] T029 [US2] Add commands `preview_cleanup`, `run_cleanup` and events `cleanup://progress`, `cleanup://finished` in `src-tauri/src/commands.rs`
-- [ ] T030 [US2] Add selection (A preselected; "select all" excludes C), preview dialog, irreversible second confirmation, progress and result panel in `ui/src/features/storage/clean.ts`
+- [X] T027 [P] [US2] Write failing tests `crates/ttops-core/tests/cleaner.rs`: preview has no side effects; unknown/reused preview rejected; permanent without ack changes nothing; trash mode moves items; vanished item ⇒ `noLongerExists`; protected path ⇒ `protected`; `processNames` running ⇒ `inUse`; `permanentOnly` forces permanent; container image removal via fake provider; audit records written
+- [X] T028 [US2] Implement `crates/ttops-core/src/cleaner.rs` (preview store, re-stat + re-guard, error mapping per research R10, audit writes) until T027 passes
+- [X] T029 [US2] Add commands `preview_cleanup`, `run_cleanup` and events `cleanup://progress`, `cleanup://finished` in `src-tauri/src/commands.rs`
+- [X] T030 [US2] Add selection (A preselected; "select all" excludes C), preview dialog, irreversible second confirmation, progress and result panel in `ui/src/features/storage/clean.ts`
 
 ## Phase 5: User Story 3 — Developer build outputs (P2)
 
@@ -139,3 +161,11 @@ Scoping is complete. Implementation was started and then handed off; continue fr
 1. MVP = Phases 1–4 (US1 + US2): scan and clean category A safely — reproduces the owner's manual cleanup (SC-007).
 2. Then US3, US4 (more reclaimable space), US5 (history), US6 (shell readiness for Monitor).
 3. Polish: docs, checks, release build.
+
+## Review remediation (Tech Lead REQUEST_CHANGES @730a89e)
+
+- [x] R1 Cleanup preview built with DOM nodes and `textContent`; filesystem labels never reach an HTML sink (`ui/src/features/storage/clean.ts`).
+- [x] R2 UI regression `ui/src/features/storage/clean.test.ts` (vitest + happy-dom) asserts a markup-bearing label renders literally and creates no element or handler; confirmation controls unchanged.
+- [x] R3 Defence in depth: Tauri CSP set (was `null`) to `default-src 'self'`, no inline script, IPC allowed via `ipc:`/`http://ipc.localhost`.
+- [x] R4 `scripts/check.sh` now also runs `npm --prefix ui test`.
+- Deviation: added dev dependencies `vitest` and `happy-dom` (the UI had no test runner).

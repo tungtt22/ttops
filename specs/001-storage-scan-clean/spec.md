@@ -3,10 +3,10 @@
 **Feature Branch**: `001-storage-scan-clean`
 **Created**: 2026-11-22
 **Status**: Draft
-**Input**: User description: "Storage scan and clean (MVP of TTops). Disk usage summary, read-only
-scan grouped into safe caches (A), developer build outputs (B), and large user data for review (C);
-select → preview → confirm → cleanup with move-to-Trash default; per-item results; local audit log;
-protected paths always refused; app shell with a sidebar feature registry for later features."
+**Input**: User description: "Storage scan and clean (MVP of TTops). The v0.1.0 macOS release scans
+safe caches (A) only; developer build outputs (B) and large user data for review (C) are deferred to
+v0.2.0. Selected items follow preview → confirm → cleanup with move-to-Trash default, per-item
+results, a local audit log, protected-path refusal, and an app shell for later features."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -27,9 +27,7 @@ changed.
 
 1. **Given** TTops is open, **When** the Storage view loads, **Then** total, used, and free space of
    the system volume are shown.
-2. **Given** a scan is started, **When** it completes, **Then** items appear under three categories
-   — Safe caches (A), Developer build outputs (B), Review only (C) — each with item sizes and a
-   category total.
+2. **Given** a scan is started in v0.1.0, **When** it completes, **Then** items appear under Safe caches (A) with item sizes and a category total; developer build outputs (B) and review-only data (C) are deferred to v0.2.0.
 3. **Given** a scan is running, **When** the user cancels it, **Then** scanning stops within 2 seconds
    and partial results are kept and labelled incomplete.
 4. **Given** a scan completed, **When** any scanned item is checked, **Then** its contents and
@@ -169,18 +167,21 @@ can be registered and shown without changing the Storage feature.
 
 - **FR-001**: The system MUST show total, used, and free space for the system volume.
 - **FR-002**: The system MUST scan without creating, modifying, moving, or deleting any scanned item.
-- **FR-003**: The system MUST group results into category A (safe regenerable caches), B (developer
-  build outputs), and C (review only), with per-item and per-category sizes.
+- **FR-003**: In v0.1.0, the system MUST group safe regenerable cache results into category A with
+  per-item and category sizes. Categories B (developer build outputs) and C (review only) are
+  deferred to v0.2.0.
 - **FR-004**: Category A MUST cover, where present on the platform: browser caches, package-manager
-  caches (npm, pip, uv, Homebrew, Poetry, NuGet, Gradle, Maven, Cargo registry), app updater
+  caches (npm, pip, uv, Homebrew, Poetry, Gradle, Maven, Cargo registry), app updater
   caches, the Trash/Recycle Bin, container build cache, and container images that are unused and
-  not locally built.
-- **FR-005**: Category B MUST find dependency folders, build targets, virtual environments, and
+  not locally built. In v0.1.0 this catalog is macOS-only; all locations MUST resolve at runtime
+  through Platform placeholders.
+- **FR-005**: In v0.2.0, category B MUST find dependency folders, build targets, virtual environments, and
   compiled output folders under user-configured project roots, showing project path and days since
   last project modification, without double-counting nested folders.
-- **FR-006**: Category C MUST list local AI model stores, files above a user-adjustable threshold
+- **FR-006**: In v0.2.0, category C MUST list local AI model stores, files above a user-adjustable threshold
   (default 1 GB), and chat-app media folders; chat-app media MUST be review-only with in-app guidance.
-- **FR-007**: Only category A items MUST be preselected; "select all" MUST NOT include category C.
+- **FR-007**: All v0.1.0 category A items MAY be preselected only when their rule declares them
+  regenerable; categories B and C are not present in this release.
 - **FR-008**: Before any change, the system MUST show a preview listing all items, total size, and
   action, and MUST require explicit confirmation.
 - **FR-009**: The default action MUST be move to Trash/Recycle Bin. Permanent delete MUST require an
@@ -194,13 +195,13 @@ can be registered and shown without changing the Storage feature.
   skipped items with one of the reasons: in use, locked, permission denied, protected, no longer
   exists, cannot move to Trash.
 - **FR-013**: Every cleanup run MUST be appended to a local audit log (time, items, sizes, action,
-  per-item outcome) that survives restarts and is viewable in History.
+  per-item outcome) that survives restarts. A persisted History view is deferred to v0.2.0.
 - **FR-014**: Scans MUST be cancellable; partial results MUST be labelled incomplete.
 - **FR-015**: Locations that could not be scanned MUST be listed with the reason.
 - **FR-016**: The app MUST present features in a sidebar driven by a feature registry, starting with
-  Storage and History.
-- **FR-017**: The feature MUST work on macOS and Windows; any category item unavailable on one
-  platform is simply absent there.
+  Storage and a History placeholder; persisted History functionality is deferred to v0.2.0.
+- **FR-017**: v0.1.0 MUST work on macOS. Windows support and any unavailable category items are
+  deferred to v0.2.0.
 - **FR-018**: The system MUST NOT send any data off the machine.
 
 ### Key Entities
@@ -223,19 +224,20 @@ can be registered and shown without changing the Storage feature.
 
 - **SC-001**: A user can go from opening the app to a completed cleanup of category A in under
   2 minutes on a typical developer machine.
-- **SC-002**: A scan of a home folder of about 300 GB completes in under 3 minutes and the window
-  stays responsive throughout.
+- **SC-002**: A scan of v0.1.0 category A locations completes in under 3 minutes on a typical
+  developer machine and the window stays responsive throughout.
 - **SC-003**: In automated tests, 100% of protected-path attempts are refused, including link-based
   attempts.
 - **SC-004**: 0 scanned items are modified by a scan (verified by before/after comparison in tests).
 - **SC-005**: Freed space reported by TTops is within 5% of the actual change in free space.
-- **SC-006**: 100% of cleanup runs, including interrupted ones, appear in History after restart.
-- **SC-007**: Reproducing the owner's manual cleanup (caches, package managers, container cache and
-  unused images, Trash) with TTops frees at least 90% of the space that the manual cleanup freed.
+- **SC-006**: In v0.2.0, 100% of cleanup runs, including interrupted ones, appear in History after restart.
+- **SC-007**: On macOS, reproducing the owner's manual category A cleanup (caches, package managers,
+  container cache and unused images, Trash) with TTops frees at least 90% of the space that the
+  manual cleanup freed.
 
 ## Assumptions
 
-- The user runs TTops as a normal (non-admin) user; system-wide locations needing elevation are out
+- The v0.1.0 user runs TTops on macOS as a normal (non-admin) user; system-wide locations needing elevation are out
   of scope for this feature.
 - The system volume is the volume holding the user's home folder.
 - Container cleanup supports Docker-compatible engines (Docker Desktop, OrbStack) when their CLI is
