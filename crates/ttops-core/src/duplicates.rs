@@ -39,7 +39,8 @@ pub(crate) fn scan_duplicates(
             let name = entry.file_name().to_string_lossy();
             if entry.file_type().is_dir()
                 && (SKIP_DIRS.contains(&name.as_ref())
-                    || crate::apps::is_privacy_guarded(platform, entry.path()))
+                    || crate::apps::is_privacy_guarded(platform, entry.path())
+                    || (entry.depth() > 0 && guard.protects_subtree(entry.path())))
             {
                 walker.skip_current_dir();
                 continue;

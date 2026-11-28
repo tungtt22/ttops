@@ -46,3 +46,4 @@
 
 - [x] Merged the PR #1 fix (6a34ba8): strict Tauri CSP, vitest UI tests in `check.sh`.
 - [x] `ui/src/features/storage/clean.ts` (rewritten in this slice) now builds the preview — labels, detail paths, refusal reasons — with DOM nodes and `textContent` instead of escaped `innerHTML`; `clean.test.ts` adapted to the backend-driven preview.
+- [x] Merged PR #2 remediation (50e9ec3): `walk_unprotected` now takes the platform and skips both guard-protected subtrees and privacy-guarded app containers; `duplicates.rs` walk also skips guard-protected subtrees; storage view recomputes `Clean selected` on every selection change (`view.test.ts` adapted for `details`).

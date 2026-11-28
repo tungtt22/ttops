@@ -44,6 +44,18 @@ impl Guard {
         }
         Ok(())
     }
+
+    /// True when every path below `dir` is rejected by [`Guard::check`]: `dir`
+    /// equals or lies inside a protected root, or has a protected component.
+    /// Unlike `check`, an ancestor of a protected root (such as the home folder)
+    /// is not a protected subtree, so walkers may still descend into it.
+    pub fn protects_subtree(&self, dir: &Path) -> bool {
+        let checked = normalize_existing_or_lexical(dir);
+        self.protected_roots
+            .iter()
+            .any(|root| path_starts_with(&checked, root))
+            || checked.components().any(protected_component)
+    }
 }
 
 impl Guard {

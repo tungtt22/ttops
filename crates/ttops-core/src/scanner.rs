@@ -437,35 +437,16 @@ fn scan_large_files(
             _ => None,
         })
         .collect();
-    let mut walker = WalkDir::new(root).follow_links(false).into_iter();
-    while let Some(entry) = walker.next() {
-        if cancel.load(Ordering::Relaxed) {
-            session.status = ScanStatus::Cancelled;
+    let completed = walk_unprotected(platform, root, guard, &claimed, cancel, |entry| {
+        let path = entry.path();
+        if !entry.file_type().is_file() {
             return;
         }
-        let Ok(entry) = entry else {
-            continue;
-        };
-        let path = entry.path();
-        // Other apps' containers are privacy-guarded: reading them blocks on a consent prompt.
-        if entry.file_type().is_dir() && crate::apps::is_privacy_guarded(platform, path) {
-            walker.skip_current_dir();
-            continue;
-        }
-        if claimed.iter().any(|claim| path.starts_with(claim)) {
-            if entry.file_type().is_dir() {
-                walker.skip_current_dir();
-            }
-            continue;
-        }
-        if !entry.file_type().is_file() {
-            continue;
-        }
         let Ok(metadata) = entry.metadata() else {
-            continue;
+            return;
         };
         if metadata.len() < threshold || guard.check(path).is_err() {
-            continue;
+            return;
         }
         let mut found = item(
             rule,
@@ -479,7 +460,46 @@ fn scan_large_files(
         );
         found.idle_days = idle_days(&metadata);
         session.items.push(found);
+    });
+    if !completed {
+        session.status = ScanStatus::Cancelled;
     }
+}
+
+/// Walks `root` without following links and calls `visit` for every entry,
+/// never descending into claimed paths or guard-protected subtrees (for example
+/// `~/Library` or a credentials folder) and never opening other apps'
+/// privacy-guarded containers, which block on a consent prompt. Returns false
+/// when cancelled.
+fn walk_unprotected(
+    platform: &dyn Platform,
+    root: &Path,
+    guard: &Guard,
+    claimed: &[PathBuf],
+    cancel: &AtomicBool,
+    mut visit: impl FnMut(&walkdir::DirEntry),
+) -> bool {
+    let mut walker = WalkDir::new(root).follow_links(false).into_iter();
+    while let Some(entry) = walker.next() {
+        if cancel.load(Ordering::Relaxed) {
+            return false;
+        }
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let path = entry.path();
+        let skip = claimed.iter().any(|claim| path.starts_with(claim))
+            || (entry.file_type().is_dir() && crate::apps::is_privacy_guarded(platform, path))
+            || (entry.depth() > 0 && entry.file_type().is_dir() && guard.protects_subtree(path));
+        if skip {
+            if entry.file_type().is_dir() {
+                walker.skip_current_dir();
+            }
+            continue;
+        }
+        visit(&entry);
+    }
+    true
 }
 
 /// Days since the newest of access and modification time.
@@ -540,5 +560,53 @@ pub(crate) fn item(
         duplicate_group: None,
         idle_days: None,
         details: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod walk_tests {
+    use super::*;
+    use crate::platform::{Platform, TestPlatform};
+
+    #[test]
+    fn walk_never_enters_protected_or_claimed_subtrees() {
+        let temp = tempfile::tempdir().unwrap();
+        let platform = TestPlatform::new(temp.path(), "");
+        let home = platform.home();
+        let ssh = home.join(".ssh");
+        for dir in [
+            ssh.join("keys/deep"),
+            home.join("keys/credentials/inner"),
+            home.join("claimed/inner"),
+            home.join("videos"),
+        ] {
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("file.bin"), b"x").unwrap();
+        }
+        let guard = Guard::new(&platform);
+        assert!(
+            guard.protects_subtree(&ssh),
+            "test fixture must protect ~/.ssh"
+        );
+
+        let mut visited = Vec::new();
+        let done = walk_unprotected(
+            &platform,
+            &home,
+            &guard,
+            &[home.join("claimed")],
+            &AtomicBool::new(false),
+            |entry| visited.push(entry.path().to_path_buf()),
+        );
+
+        assert!(done);
+        assert!(visited.contains(&home.join("videos/file.bin")));
+        assert!(visited.contains(&home.join("keys")));
+        for blocked in [ssh, home.join("keys/credentials"), home.join("claimed")] {
+            assert!(
+                visited.iter().all(|path| !path.starts_with(&blocked)),
+                "walk entered {blocked:?}: {visited:?}"
+            );
+        }
     }
 }
