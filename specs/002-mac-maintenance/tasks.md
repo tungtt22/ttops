@@ -48,3 +48,4 @@
 - [x] `ui/src/features/storage/clean.ts` (rewritten in this slice) now builds the preview — labels, detail paths, refusal reasons — with DOM nodes and `textContent` instead of escaped `innerHTML`; `clean.test.ts` adapted to the backend-driven preview.
 - [x] Merged PR #2 remediation (50e9ec3): `walk_unprotected` now takes the platform and skips both guard-protected subtrees and privacy-guarded app containers; `duplicates.rs` walk also skips guard-protected subtrees; storage view recomputes `Clean selected` on every selection change (`view.test.ts` adapted for `details`).
 - [x] Tester FAIL @06b8245 finding 2: added `scripts/mutation-evidence.py` and `evidence/mutation-evidence.md` (14/14 targeted mutations killed by assertion panics).
+- [x] Tech Lead REQUEST_CHANGES @f20c0e6: evidence now requires an assertion panic in the test's own file (unwrap/other panics rejected); trailing whitespace removed.
