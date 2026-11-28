@@ -473,10 +473,11 @@ mod walk_tests {
         assert!(visited.contains(&home.join("videos/file.bin")));
         assert!(visited.contains(&home.join("keys")));
         for blocked in [ssh, home.join("keys/credentials"), home.join("claimed")] {
-            assert!(
-                visited.iter().all(|path| !path.starts_with(&blocked)),
-                "walk entered {blocked:?}: {visited:?}"
-            );
+            let entered: Vec<&PathBuf> = visited
+                .iter()
+                .filter(|path| path.starts_with(&blocked))
+                .collect();
+            assert_eq!(entered, Vec::<&PathBuf>::new(), "walk entered {blocked:?}");
         }
     }
 }
