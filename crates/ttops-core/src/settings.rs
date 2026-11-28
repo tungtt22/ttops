@@ -4,7 +4,33 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, Write};
 use std::path::Path;
 
+use crate::guard::Guard;
 use crate::model::Settings;
+
+/// Smallest accepted large-file threshold (1 MiB).
+pub const MIN_THRESHOLD_BYTES: u64 = 1 << 20;
+
+/// Validates user-supplied settings: every project root must be an existing,
+/// non-protected directory; duplicates are dropped.
+pub fn validate(mut settings: Settings, guard: &Guard) -> Result<Settings, String> {
+    if settings.large_file_threshold_bytes < MIN_THRESHOLD_BYTES {
+        return Err("largeFileThresholdTooSmall".into());
+    }
+    let mut roots = Vec::new();
+    for root in settings.project_roots {
+        if !root.is_absolute() || !root.is_dir() {
+            return Err(format!("notADirectory: {}", root.display()));
+        }
+        guard
+            .check(&root)
+            .map_err(|_| format!("protected: {}", root.display()))?;
+        if !roots.contains(&root) {
+            roots.push(root);
+        }
+    }
+    settings.project_roots = roots;
+    Ok(settings)
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {

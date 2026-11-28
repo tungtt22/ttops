@@ -17,7 +17,6 @@ Types refer to [data-model.md](../data-model.md). Errors are returned as
 | `get_run` | `{ runId }` | `CleanupRun` | |
 | `get_settings` | – | `Settings` | |
 | `set_settings` | `Settings` | `Settings` | project roots must be existing directories and not protected |
-| `pick_project_root` | – | `string?` | native folder dialog |
 
 ## Events
 

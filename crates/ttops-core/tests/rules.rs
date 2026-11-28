@@ -76,8 +76,7 @@ fn rejects_unsafe_catalogs() {
 }
 
 #[test]
-fn macos_category_a_catalog_expands_platform_locations_and_scans_seeded_cache_and_container_items()
-{
+fn macos_catalog_expands_platform_locations_and_scans_seeded_cache_and_container_items() {
     let temp = TempDir::new().unwrap();
     let platform = TestPlatform::new(temp.path(), include_str!("../rules/macos.toml"));
     let rules = load_platform_catalog(&platform).unwrap();
@@ -96,10 +95,25 @@ fn macos_category_a_catalog_expands_platform_locations_and_scans_seeded_cache_an
         "container-build-cache",
         "container-unused-images",
         "trash",
+        "project-build-outputs",
+        "local-model-stores",
+        "chat-app-media",
+        "large-files",
     ] {
         assert!(ids.contains(&required), "missing {required}");
     }
-    assert!(rules.iter().all(|rule| rule.category == Category::A));
+    assert!(
+        rules
+            .iter()
+            .filter(|rule| rule.category != Category::A)
+            .all(|rule| !rule.preselect)
+    );
+    assert!(
+        rules
+            .iter()
+            .filter(|rule| rule.review_only)
+            .all(|rule| rule.category == Category::C)
+    );
     assert!(
         rules
             .iter()

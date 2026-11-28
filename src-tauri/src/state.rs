@@ -86,18 +86,23 @@ pub struct AppState {
     pub container: Arc<dyn ContainerProvider>,
     pub cleaner: Mutex<Cleaner>,
     pub scans: Arc<ScanStore>,
+    pub settings_path: std::path::PathBuf,
+    pub settings_lock: Mutex<()>,
 }
 
 impl AppState {
     pub fn new(platform: Box<dyn Platform>) -> Self {
         let platform: Arc<dyn Platform> = Arc::from(platform);
         let container: Arc<dyn ContainerProvider> = Arc::new(DockerProvider);
-        let audit = AuditLog::new(platform.data_dir().join("TTops").join("audit.jsonl"));
+        let app_data = platform.data_dir().join("TTops");
+        let audit = AuditLog::new(app_data.join("audit.jsonl"));
         Self {
             cleaner: Mutex::new(Cleaner::new(platform.clone(), container.clone(), audit)),
             platform,
             container,
             scans: Arc::new(ScanStore::default()),
+            settings_path: app_data.join("settings.json"),
+            settings_lock: Mutex::new(()),
         }
     }
 }

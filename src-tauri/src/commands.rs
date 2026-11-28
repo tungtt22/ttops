@@ -7,9 +7,11 @@ use std::{
 use serde::Serialize;
 use tauri::{Emitter, State};
 use ttops_core::{
-    model::{CleanupPreview, CleanupRun, ScanSession, VolumeSummary},
+    guard::Guard,
+    model::{CleanupPreview, CleanupRun, ScanSession, Settings, VolumeSummary},
     rules::load_platform_catalog,
-    scanner::{ProgressSink, scan_with_id},
+    scanner::{ProgressSink, scan_with_settings},
+    settings,
 };
 
 use crate::state::AppState;
@@ -80,6 +82,7 @@ pub fn start_scan(
     state: State<'_, AppState>,
 ) -> Result<ScanStarted, String> {
     let rules = load_platform_catalog(state.platform.as_ref()).map_err(error)?;
+    let settings = settings::load(&state.settings_path).map_err(error)?;
     let (scan_id, cancel) = state.scans.begin()?;
     let platform = state.platform.clone();
     let container = state.container.clone();
@@ -93,10 +96,11 @@ pub fn start_scan(
             scan_id: scan_id_for_thread.clone(),
             last_sent: Mutex::new(None),
         };
-        let session = scan_with_id(
+        let session = scan_with_settings(
             scan_id_for_thread.clone(),
             platform.as_ref(),
             &rules,
+            &settings,
             container.as_ref(),
             cancel.as_ref(),
             &progress,
@@ -110,6 +114,19 @@ pub fn start_scan(
     });
 
     Ok(ScanStarted { scan_id })
+}
+
+#[tauri::command]
+pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
+    settings::load(&state.settings_path).map_err(error)
+}
+
+#[tauri::command]
+pub fn set_settings(settings: Settings, state: State<'_, AppState>) -> Result<Settings, String> {
+    let _lock = state.settings_lock.lock().map_err(error)?;
+    let validated = settings::validate(settings, &Guard::new(state.platform.as_ref()))?;
+    settings::save(&state.settings_path, &validated).map_err(error)?;
+    Ok(validated)
 }
 
 #[tauri::command]

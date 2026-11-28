@@ -4,8 +4,8 @@
 **Created**: 2026-11-22
 **Status**: Draft
 **Input**: User description: "Storage scan and clean (MVP of TTops). The v0.1.0 macOS release scans
-safe caches (A) only; developer build outputs (B) and large user data for review (C) are deferred to
-v0.2.0. Selected items follow preview → confirm → cleanup with move-to-Trash default, per-item
+safe caches (A); developer build outputs (B) and large user data for review (C) were reprioritized
+into this feature on 2026-11-27. Selected items follow preview → confirm → cleanup with move-to-Trash default, per-item
 results, a local audit log, protected-path refusal, and an app shell for later features."
 
 ## User Scenarios & Testing *(mandatory)*
@@ -27,7 +27,7 @@ changed.
 
 1. **Given** TTops is open, **When** the Storage view loads, **Then** total, used, and free space of
    the system volume are shown.
-2. **Given** a scan is started in v0.1.0, **When** it completes, **Then** items appear under Safe caches (A) with item sizes and a category total; developer build outputs (B) and review-only data (C) are deferred to v0.2.0.
+2. **Given** a scan is started in v0.1.0, **When** it completes, **Then** items appear under Safe caches (A), Developer build outputs (B), and Large data to review (C) with item sizes and a category total.
 3. **Given** a scan is running, **When** the user cancels it, **Then** scanning stops within 2 seconds
    and partial results are kept and labelled incomplete.
 4. **Given** a scan completed, **When** any scanned item is checked, **Then** its contents and

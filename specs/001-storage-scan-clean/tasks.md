@@ -25,8 +25,21 @@ after Tech Lead review found that the prior documentation claimed scope not pres
   and renders freed bytes, succeeded items, and skipped reasons. Command event summary coverage is
   in `src-tauri/src/commands.rs`.
 
-The remaining Phase 5–8 tasks are v0.2.0 scope unless explicitly reprioritized. Do not claim B/C,
-Windows, or persisted History as v0.1.0 functionality.
+Owner reprioritized on 2026-11-27: categories B (US3) and C (US4) are implemented on branch
+`001-storage-bc`, stacked on `730a89e`. Windows UI validation and persisted History (Phase 7–8)
+remain v0.2.0 scope.
+
+Deviations from the original task text (2026-11-27):
+- T033: `pick_project_root` and the dialog plugin were not added. Project folders are entered as an
+  absolute path in the Storage settings panel, which avoids a new plugin and capability. `set_settings`
+  validates that each root is an existing, non-protected, absolute directory and de-duplicates roots;
+  the threshold must be at least 1 MiB.
+- T031/T035: tests live in `crates/ttops-core/tests/scanner_bc.rs`, not `scanner.rs`.
+- Project age = days since the newest top-level entry in the project folder changed, ignoring build
+  outputs (falls back to the folder's own mtime).
+- Large-file scanning walks the home folder without following symlinks, skips paths claimed by other
+  rules (it runs after all other rules), skips guard-protected files, and ignores unreadable folders.
+- `.git` folders are not descended into while searching for build outputs.
 
 ### Earlier implementation handoff (2026-11-22)
 
@@ -108,19 +121,19 @@ Scoping is complete. Implementation was started and then handed off; continue fr
 **Goal**: find `node_modules`, `target`, `.venv`, `dist`, `.next` under project roots with age.
 **Independent Test**: temp roots with seeded projects of different ages → outermost outputs with size and age, none preselected.
 
-- [ ] T031 [P] [US3] Write failing tests in `crates/ttops-core/tests/scanner.rs` for `projectOutputs`: outermost-only, project age days, not preselected, protected roots rejected by `set_settings`
-- [ ] T032 [US3] Implement `projectOutputs` in `crates/ttops-core/src/scanner.rs` until T031 passes
-- [ ] T033 [US3] Add `get_settings`, `set_settings`, `pick_project_root` commands in `src-tauri/src/commands.rs` (dialog plugin)
-- [ ] T034 [US3] Add project roots management and category B listing with age in `ui/src/features/storage/view.ts`
+- [x] T031 [P] [US3] Write failing tests in `crates/ttops-core/tests/scanner.rs` for `projectOutputs`: outermost-only, project age days, not preselected, protected roots rejected by `set_settings`
+- [x] T032 [US3] Implement `projectOutputs` in `crates/ttops-core/src/scanner.rs` until T031 passes
+- [x] T033 [US3] Add `get_settings`, `set_settings` commands in `src-tauri/src/commands.rs` (`pick_project_root` and the dialog plugin intentionally omitted; roots are typed paths — see Deviations)
+- [x] T034 [US3] Add project roots management and category B listing with age in `ui/src/features/storage/view.ts`
 
 ## Phase 6: User Story 4 — Review large personal data (P2)
 
 **Goal**: model stores, large files over threshold, chat media (review-only with guidance).
 **Independent Test**: seeded large file + model dir → in C, not preselected; chat media not selectable.
 
-- [ ] T035 [P] [US4] Write failing tests in `crates/ttops-core/tests/scanner.rs` for `largeFiles` (threshold, excludes paths already claimed by other rules) and `reviewOnly` items (`selectable = false`, guidance present)
-- [ ] T036 [US4] Implement `largeFiles` and review-only handling in `crates/ttops-core/src/scanner.rs` until T035 passes
-- [ ] T037 [US4] Render category C with guidance and individual-only selection in `ui/src/features/storage/view.ts`
+- [x] T035 [P] [US4] Write failing tests in `crates/ttops-core/tests/scanner.rs` for `largeFiles` (threshold, excludes paths already claimed by other rules) and `reviewOnly` items (`selectable = false`, guidance present)
+- [x] T036 [US4] Implement `largeFiles` and review-only handling in `crates/ttops-core/src/scanner.rs` until T035 passes
+- [x] T037 [US4] Render category C with guidance and individual-only selection in `ui/src/features/storage/view.ts`
 
 ## Phase 7: User Story 5 — Cleanup history (P3)
 
@@ -169,3 +182,9 @@ Scoping is complete. Implementation was started and then handed off; continue fr
 - [x] R3 Defence in depth: Tauri CSP set (was `null`) to `default-src 'self'`, no inline script, IPC allowed via `ipc:`/`http://ipc.localhost`.
 - [x] R4 `scripts/check.sh` now also runs `npm --prefix ui test`.
 - Deviation: added dev dependencies `vitest` and `happy-dom` (the UI had no test runner).
+
+## Review remediation (Tech Lead REQUEST_CHANGES on PR #2 @ac9ab3d)
+
+- [x] F1 Large-file walk no longer descends guard-protected subtrees: new `Guard::protects_subtree` (equal to or inside a protected root, or a protected component; ancestors such as home are still walked) and `walk_unprotected` in `scanner.rs` skip them before visiting descendants. Regression: `scanner::walk_tests::walk_never_enters_protected_or_claimed_subtrees`.
+- [x] F2 `Clean selected` is recomputed after every checkbox change and B Select all/none, not only from preselection. Regression: `ui/src/features/storage/view.test.ts` (B/C-only scan).
+- [x] F3 Removed `pick_project_root` from T033 and from `contracts/tauri-commands.md`; it is not registered in `src-tauri/src/main.rs` by design.

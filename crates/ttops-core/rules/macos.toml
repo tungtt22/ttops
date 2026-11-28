@@ -113,3 +113,50 @@ paths = ["~/.Trash"]
 regenerable = true
 preselect = false
 permanentOnly = true
+
+# Category B — developer build outputs under user-chosen project roots.
+[[rules]]
+id = "project-build-outputs"
+name = "Project build outputs"
+category = "B"
+kind = "projectOutputs"
+regenerable = true
+outputs = [
+  { name = "node_modules", markers = ["package.json"] },
+  { name = ".next", markers = ["package.json"] },
+  { name = ".nuxt", markers = ["package.json"] },
+  { name = "target", markers = ["Cargo.toml", "pom.xml"] },
+  { name = "build", markers = ["build.gradle", "build.gradle.kts"] },
+  { name = ".gradle", markers = ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"] },
+  { name = ".venv" },
+  { name = "venv", markers = ["requirements.txt", "pyproject.toml", "setup.py"] },
+  { name = ".tox", markers = ["tox.ini", "pyproject.toml", "setup.py"] },
+  { name = ".terraform", markers = ["main.tf", "versions.tf"] },
+]
+
+# Category C — large personal data, never preselected.
+[[rules]]
+id = "local-model-stores"
+name = "Local AI models"
+category = "C"
+kind = "dir"
+paths = ["~/.ollama/models", "~/.cache/huggingface", "~/.lmstudio/models"]
+
+[[rules]]
+id = "chat-app-media"
+name = "Chat app media"
+category = "C"
+kind = "dir"
+paths = [
+  "~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/Media",
+  "~/Library/Group Containers/6N38VWS5BX.ru.keepcoder.Telegram",
+]
+reviewOnly = true
+guidance = "Clean inside the app: open its storage settings and remove media there."
+
+[[rules]]
+id = "large-files"
+name = "Large files"
+category = "C"
+kind = "largeFiles"
+paths = ["~"]
