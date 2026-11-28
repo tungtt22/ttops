@@ -49,16 +49,19 @@ export async function storageView(root: HTMLElement): Promise<void> {
     try { await api.cancelScan(activeScanId); } catch (error) { root.querySelector("#status")!.textContent = String(error); cancelButton.disabled = false; }
   };
 }
-function render(root: HTMLElement, scan: Scan): void {
+export function render(root: HTMLElement, scan: Scan): void {
   root.querySelector("#status")!.textContent = scan.status === "Cancelled" ? "Incomplete scan — partial results retained" : "Scan complete";
   const groups: Record<string, ScanItem[]> = { A: [], B: [], C: [] };
   scan.items.forEach((item) => groups[item.category].push(item));
   const results = root.querySelector("#results")!;
-  results.replaceChildren(...Object.entries(groups).map(([category, items]) => group(category, items)));
   const clean = root.querySelector<HTMLButtonElement>("#clean")!;
-  clean.disabled = !scan.items.some((item) => item.preselected && item.selectable);
+  const selectedItems = () => scan.items.filter((item) => item.selectable && results.querySelector<HTMLInputElement>(`input[data-id="${CSS.escape(item.id)}"]`)?.checked);
+  // Recomputed after every checkbox or bulk change, for every category.
+  const updateClean = () => { clean.disabled = selectedItems().length === 0; };
+  results.replaceChildren(...Object.entries(groups).map(([category, items]) => group(category, items, updateClean)));
+  updateClean();
   clean.onclick = async () => {
-    const selected = scan.items.filter((item) => results.querySelector<HTMLInputElement>(`input[data-id="${CSS.escape(item.id)}"]`)?.checked);
+    const selected = selectedItems();
     try {
       const run = await confirmCleanup(scan.id, selected);
       if (!run) return;
@@ -76,7 +79,7 @@ function describe(item: ScanItem): string {
   return parts.join(" — ");
 }
 
-function group(category: string, items: ScanItem[]): HTMLElement {
+function group(category: string, items: ScanItem[], onSelectionChange: () => void): HTMLElement {
   const section = document.createElement("section");
   section.className = "card";
   const total = items.reduce((sum, item) => sum + item.sizeBytes, 0);
@@ -93,14 +96,14 @@ function group(category: string, items: ScanItem[]): HTMLElement {
   } else {
     // Category C is never part of "select all".
     const all = document.createElement("button"); all.textContent = "Select all"; all.type = "button";
-    all.onclick = () => boxes.forEach((box) => { if (!box.disabled) box.checked = true; });
+    all.onclick = () => { boxes.forEach((box) => { if (!box.disabled) box.checked = true; }); onSelectionChange(); };
     const none = document.createElement("button"); none.textContent = "Select none"; none.type = "button";
-    none.onclick = () => boxes.forEach((box) => { box.checked = false; });
+    none.onclick = () => { boxes.forEach((box) => { box.checked = false; }); onSelectionChange(); };
     section.append(all, none);
   }
   for (const item of items) {
     const label = document.createElement("label"); label.className = "item";
-    const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.dataset.id = item.id; checkbox.checked = item.preselected; checkbox.disabled = !item.selectable;
+    const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.dataset.id = item.id; checkbox.checked = item.preselected; checkbox.disabled = !item.selectable; checkbox.onchange = onSelectionChange;
     boxes.push(checkbox);
     label.append(checkbox, document.createTextNode(describe(item))); section.append(label);
   }

@@ -123,7 +123,7 @@ Scoping is complete. Implementation was started and then handed off; continue fr
 
 - [x] T031 [P] [US3] Write failing tests in `crates/ttops-core/tests/scanner.rs` for `projectOutputs`: outermost-only, project age days, not preselected, protected roots rejected by `set_settings`
 - [x] T032 [US3] Implement `projectOutputs` in `crates/ttops-core/src/scanner.rs` until T031 passes
-- [x] T033 [US3] Add `get_settings`, `set_settings`, `pick_project_root` commands in `src-tauri/src/commands.rs` (dialog plugin)
+- [x] T033 [US3] Add `get_settings`, `set_settings` commands in `src-tauri/src/commands.rs` (`pick_project_root` and the dialog plugin intentionally omitted; roots are typed paths — see Deviations)
 - [x] T034 [US3] Add project roots management and category B listing with age in `ui/src/features/storage/view.ts`
 
 ## Phase 6: User Story 4 — Review large personal data (P2)
@@ -182,3 +182,9 @@ Scoping is complete. Implementation was started and then handed off; continue fr
 - [x] R3 Defence in depth: Tauri CSP set (was `null`) to `default-src 'self'`, no inline script, IPC allowed via `ipc:`/`http://ipc.localhost`.
 - [x] R4 `scripts/check.sh` now also runs `npm --prefix ui test`.
 - Deviation: added dev dependencies `vitest` and `happy-dom` (the UI had no test runner).
+
+## Review remediation (Tech Lead REQUEST_CHANGES on PR #2 @ac9ab3d)
+
+- [x] F1 Large-file walk no longer descends guard-protected subtrees: new `Guard::protects_subtree` (equal to or inside a protected root, or a protected component; ancestors such as home are still walked) and `walk_unprotected` in `scanner.rs` skip them before visiting descendants. Regression: `scanner::walk_tests::walk_never_enters_protected_or_claimed_subtrees`.
+- [x] F2 `Clean selected` is recomputed after every checkbox change and B Select all/none, not only from preselection. Regression: `ui/src/features/storage/view.test.ts` (B/C-only scan).
+- [x] F3 Removed `pick_project_root` from T033 and from `contracts/tauri-commands.md`; it is not registered in `src-tauri/src/main.rs` by design.
