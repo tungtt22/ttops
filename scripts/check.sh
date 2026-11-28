@@ -7,3 +7,4 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 npm --prefix ui run typecheck
+npm --prefix ui test
