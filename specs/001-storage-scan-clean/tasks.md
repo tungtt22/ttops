@@ -174,3 +174,11 @@ Scoping is complete. Implementation was started and then handed off; continue fr
 1. MVP = Phases 1–4 (US1 + US2): scan and clean category A safely — reproduces the owner's manual cleanup (SC-007).
 2. Then US3, US4 (more reclaimable space), US5 (history), US6 (shell readiness for Monitor).
 3. Polish: docs, checks, release build.
+
+## Review remediation (Tech Lead REQUEST_CHANGES @730a89e)
+
+- [x] R1 Cleanup preview built with DOM nodes and `textContent`; filesystem labels never reach an HTML sink (`ui/src/features/storage/clean.ts`).
+- [x] R2 UI regression `ui/src/features/storage/clean.test.ts` (vitest + happy-dom) asserts a markup-bearing label renders literally and creates no element or handler; confirmation controls unchanged.
+- [x] R3 Defence in depth: Tauri CSP set (was `null`) to `default-src 'self'`, no inline script, IPC allowed via `ipc:`/`http://ipc.localhost`.
+- [x] R4 `scripts/check.sh` now also runs `npm --prefix ui test`.
+- Deviation: added dev dependencies `vitest` and `happy-dom` (the UI had no test runner).

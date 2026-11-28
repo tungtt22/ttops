@@ -41,3 +41,8 @@
 - Release smoke (read-only, owner machine): app scan 45 apps / 26 orphan candidates in ~21 s (debug
   build), startup 18 items in 67 ms, `brew cleanup --dry-run` 1.2 GiB in 1.7 s.
 - Not done: interactive UI walkthrough, uninstall on a real app, Windows.
+
+## Carried from PR #1 review remediation
+
+- [x] Merged the PR #1 fix (6a34ba8): strict Tauri CSP, vitest UI tests in `check.sh`.
+- [x] `ui/src/features/storage/clean.ts` (rewritten in this slice) now builds the preview — labels, detail paths, refusal reasons — with DOM nodes and `textContent` instead of escaped `innerHTML`; `clean.test.ts` adapted to the backend-driven preview.
